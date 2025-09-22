@@ -1,54 +1,67 @@
 <!doctype html>
 <html lang="nl">
 <head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
   <title>Zeeslag — Lobby</title>
-  <link rel="stylesheet" href="css/styles.css"/>
+  <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <main class="container">
-    <h1>Zeeslag - Lobby</h1>
+  <main class="wrap">
+    <header class="topbar">
+      <h1>Zeeslag — Multiplayer</h1>
+      <p class="subtitle">Realtime zeeslag met lobby-codes en animaties</p>
+    </header>
 
-    <section id="profile">
+    <section class="card" id="profile-card">
       <h2>Speel als gast of onthoud voortgang</h2>
-      <label>Voornaam <input id="name" placeholder="Voornaam"></label>
-      <label>Gebruikersnaam <input id="username" placeholder="gebruikersnaam"></label>
-      <label>Leeftijd <input id="age" type="number" min="6" placeholder="leeftijd"></label>
-      <div>
-        <button id="btn-guest">Speel als gast (snel)</button>
-        <button id="btn-save">Opslaan / Inloggen (onthoud voortgang)</button>
-      </div>
-      <p class="note">Als je op 'Opslaan' klikt, wordt lokaal een deterministische sleutel gemaakt van naam+gebruikersnaam+leeftijd. Geen veilige wachtwoordopslag — zie README voor details.</p>
-    </section>
-
-    <section id="lobby-controls">
-      <h2>Maak of join een lobby</h2>
-      <div>
-        <label>Game mode:
-          <select id="gamemode">
-            <option value="5">5 x 5</option>
-            <option value="10" selected>10 x 10</option>
-            <option value="15">15 x 15</option>
-          </select>
-        </label>
+      <div class="form-grid">
+        <label>Voornaam <input id="name" placeholder="Voornaam"></label>
+        <label>Gebruikersnaam <input id="username" placeholder="gebruikersnaam"></label>
+        <label>Leeftijd <input id="age" type="number" min="6" placeholder="leeftijd"></label>
       </div>
       <div class="row">
+        <button id="btn-guest">Speel als gast</button>
+        <button id="btn-save">Opslaan / Onthoud</button>
+      </div>
+      <p class="muted">Opslaan creëert lokaal een deterministische sleutel (niet veilig voor productie).</p>
+    </section>
+
+    <section class="card" id="lobby-card">
+      <h2>Lobby</h2>
+      <div class="row">
+        <label>Game mode:
+          <select id="gamemode">
+            <option value="5">5 × 5</option>
+            <option value="10" selected>10 × 10</option>
+            <option value="15">15 × 15</option>
+          </select>
+        </label>
         <button id="create-lobby">Maak lobby</button>
-        <input id="join-code" placeholder="Lobby code (bv. ABC123)"/>
-        <button id="join-lobby">Join</button>
       </div>
 
-      <div id="my-lobby" class="hidden">
+      <div class="or">of join</div>
+
+      <div class="row">
+        <input id="join-code" placeholder="Lobby code (bv. ABC123)" />
+        <button id="join-lobby">Join lobby</button>
+      </div>
+
+      <div id="my-lobby" class="hidden notice">
         <p>Lobby code: <strong id="lobby-code"></strong></p>
         <p>Status: <span id="lobby-status">-</span></p>
-        <button id="go-to-game" class="hidden">Ga naar game</button>
+        <button id="go-to-game" class="hidden">Ga naar spel</button>
       </div>
     </section>
 
+    <footer class="muted">Publiceer via GitHub Pages en embed in Google Sites met een &lt;iframe&gt;.</footer>
   </main>
 
-  <script type="module" src="js/app-auth.js"></script>
-  <script type="module" src="js/lobby.js"></script>
+  <script type="module" src="firebase-config.js"></script>
+  <script type="module" src="app-auth.js"></script>
+  <script type="module" src="lobby.js"></script>
 </body>
 </html>
