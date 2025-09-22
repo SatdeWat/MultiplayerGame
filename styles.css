@@ -1,4 +1,4 @@
-/* styles.css - aantrekkelijke UI */
+/* styles.css (updated) */
 :root{
   --bg:#071426;
   --card:#eaf4ff;
@@ -6,6 +6,7 @@
   --muted:#6b7a89;
 }
 
+/* existing style baseline (same as before) */
 *{box-sizing:border-box}
 body{margin:0;font-family:Inter,Segoe UI,Helvetica,Arial;background:linear-gradient(180deg,#042033 0%, #07243a 100%);color:#eaf4ff}
 .wrap{max-width:1100px;margin:28px auto;padding:16px}
@@ -36,7 +37,17 @@ button:disabled{opacity:0.5;cursor:not-allowed}
 .tile.ship{background:linear-gradient(180deg,#34515f,#2b3b44); color:#fff}
 .tile.hit{background:linear-gradient(180deg,#ff6b6b,#c43a3a); color:white}
 .tile.miss{background:linear-gradient(180deg,#f0f7ff,#cfe9ff)}
+.tile.sunk{background:linear-gradient(180deg,#5b2b2b,#3b1515); color:#fff;}
 
+/* sunk pop animation */
+.sunk-pop{animation:pop 900ms ease-out}
+@keyframes pop{
+  0%{transform:scale(1); box-shadow:0 0 0 rgba(255,255,255,0)}
+  30%{transform:scale(1.25); box-shadow:0 12px 30px rgba(255,0,0,0.25)}
+  100%{transform:scale(1); box-shadow:0 0 0 rgba(255,255,255,0)}
+}
+
+/* controls & ship list */
 .controls{margin-top:8px;display:flex;gap:8px}
 .ship-list{margin-top:10px;display:flex;gap:8px;flex-wrap:wrap}
 .ship-pill{padding:6px 8px;border-radius:8px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.03);color:var(--card);cursor:pointer}
@@ -49,3 +60,30 @@ button:disabled{opacity:0.5;cursor:not-allowed}
 .log{max-height:160px;overflow:auto;margin-top:10px;background:rgba(255,255,255,0.02);padding:8px;border-radius:8px;font-size:13px;color:#e6f6ff}
 .notice{margin-top:8px;padding:10px;background:rgba(255,255,255,0.02);border-left:4px solid rgba(11,109,241,0.8)}
 .hidden{display:none}
+
+/* overlay (in-game popup) */
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,0.55);display:flex;align-items:center;justify-content:center;z-index:9999}
+.overlay.hidden{display:none}
+.overlay-content{background:white;color:#032; padding:18px;border-radius:12px;min-width:280px;max-width:90%;text-align:center}
+.overlay-actions{margin-top:10px;text-align:center}
+
+/* leaderboard styling */
+.leaderboard-list{display:flex;flex-direction:column;gap:6px}
+.leader-row{display:flex;align-items:center;gap:8px;padding:8px;background:rgba(255,255,255,0.02);border-radius:8px}
+.leader-pos{width:32px;font-weight:700;color:#ffd700}
+.leader-name{flex:1}
+.leader-wins{font-weight:700}
+
+/* win / lose body animations */
+.win-anim{animation:winGlow 1800ms ease-in-out}
+@keyframes winGlow{
+  0%{box-shadow:0 0 0 rgba(255,255,255,0)}
+  50%{box-shadow:0 20px 80px rgba(11,109,241,0.2)}
+  100%{box-shadow:0 0 0 rgba(255,255,255,0)}
+}
+.lose-anim{animation:loseGlow 1800ms ease-in-out}
+@keyframes loseGlow{
+  0%{filter:grayscale(0)}
+  50%{filter:grayscale(1) contrast(0.6)}
+  100%{filter:grayscale(0)}
+}
