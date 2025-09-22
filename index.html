@@ -13,50 +13,83 @@
     <section class="card" id="auth-card">
       <h2>Login / Registreren</h2>
       <div class="form-grid">
-        <label>Gebruikersnaam <input id="username" placeholder="gebruikersnaam"></label>
-        <label>Pincode <input id="pincode" placeholder="4–8 tekens" type="password" maxlength="8"></label>
+        <label>Gebruikersnaam <input id="username" placeholder="gebruikersnaam" autocomplete="off"></label>
+        <label>Pincode <input id="pincode" placeholder="4–8 tekens" type="password" maxlength="8" autocomplete="off"></label>
       </div>
-      <div class="row">
+      <div class="row" style="margin-top:8px">
         <button id="btn-register">Registreren</button>
         <button id="btn-login">Inloggen</button>
         <button id="btn-guest">Speel als gast</button>
       </div>
-      <div id="auth-status" class="muted" style="margin-top:8px"></div>
+      <div id="auth-status" class="muted" style="margin-top:12px"></div>
     </section>
   </main>
 
+  <!-- script onderaan, en wacht op DOMContentLoaded -->
   <script type="module">
     import { registerUser, loginUser, loginGuest } from "./app-auth.js";
 
     const $ = id => document.getElementById(id);
-    const status = $("auth-status");
 
-    $("btn-register").addEventListener("click", async ()=>{
-      status.textContent = "Registreren...";
-      try {
-        const u = $("username").value.trim();
-        const p = $("pincode").value.trim();
-        await registerUser(u,p);
-        status.textContent = "Geregistreerd — doorsturen naar lobby...";
-        setTimeout(()=> location.href = "lobby.html", 350);
-      } catch(e){ status.textContent = "Fout: " + e.message; console.error(e); }
-    });
+    document.addEventListener('DOMContentLoaded', ()=> {
+      const status = $("auth-status");
+      const inUser = $("username");
+      const inPin = $("pincode");
+      const btnRegister = $("btn-register");
+      const btnLogin = $("btn-login");
+      const btnGuest = $("btn-guest");
 
-    $("btn-login").addEventListener("click", async ()=>{
-      status.textContent = "Inloggen...";
-      try {
-        const u = $("username").value.trim();
-        const p = $("pincode").value.trim();
-        await loginUser(u,p);
-        status.textContent = "Ingelogd — doorsturen...";
-        setTimeout(()=> location.href = "lobby.html", 250);
-      } catch(e){ status.textContent = "Fout: " + e.message; console.error(e); }
-    });
+      // helper: safe set status
+      function setStatus(msg, isError=false){
+        status.textContent = msg;
+        status.style.color = isError ? "#ffb4b4" : "";
+      }
 
-    $("btn-guest").addEventListener("click", ()=>{
-      loginGuest();
-      status.textContent = "Ingelogd als gast — doorsturen...";
-      setTimeout(()=> location.href = "lobby.html", 200);
+      btnRegister.addEventListener('click', async ()=>{
+        setStatus("Registreren...");
+        try {
+          const u = inUser.value.trim();
+          const p = inPin.value.trim();
+          if (!u || !p) { setStatus("Vul gebruikersnaam en pincode in", true); return; }
+          await registerUser(u, p); // throws on error
+          setStatus("Geregistreerd — doorsturen naar lobby...");
+          setTimeout(()=> location.href = "lobby.html", 350);
+        } catch(err){
+          console.error("register error", err);
+          setStatus("Registratie mislukt: " + (err.message || err), true);
+        }
+      });
+
+      btnLogin.addEventListener('click', async ()=>{
+        setStatus("Inloggen...");
+        try {
+          const u = inUser.value.trim();
+          const p = inPin.value.trim();
+          if (!u || !p) { setStatus("Vul gebruikersnaam en pincode in", true); return; }
+          await loginUser(u, p); // throws if not found
+          setStatus("Ingelogd — doorsturen naar lobby...");
+          setTimeout(()=> location.href = "lobby.html", 250);
+        } catch(err){
+          console.error("login error", err);
+          setStatus("Login mislukt: " + (err.message || err), true);
+        }
+      });
+
+      btnGuest.addEventListener('click', ()=>{
+        try {
+          loginGuest();
+          setStatus("Ingelogd als gast — doorsturen naar lobby...");
+          setTimeout(()=> location.href = "lobby.html", 200);
+        } catch(err){
+          console.error("guest error", err);
+          setStatus("Kon niet als gast inloggen: " + (err.message || err), true);
+        }
+      });
+
+      // usability: press Enter on pincode to attempt login
+      inPin.addEventListener('keydown', (e)=>{
+        if (e.key === 'Enter') btnLogin.click();
+      });
     });
   </script>
 </body>
