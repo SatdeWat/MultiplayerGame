@@ -1,10 +1,11 @@
-// app-auth.js
+// app-auth.js (REPLACEMENT) - event-driven, no auto popups
 import { db } from "./firebase-config.js";
-import { ref, set, get } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
+import { ref, set, get, runTransaction } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
 
 const STORAGE_KEY = "zs_profile_v4";
 const $ = id => document.getElementById(id);
 
+// util hex
 function buf2hex(buffer){
   return Array.prototype.map.call(new Uint8Array(buffer), x => ('00' + x.toString(16)).slice(-2)).join('');
 }
@@ -18,7 +19,8 @@ export async function deriveId(username, pin){
 }
 
 export function saveLocalProfile(profile){
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(profile));
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(profile)); }
+  catch(e){ console.warn('Kon profiel niet lokaal opslaan', e); }
 }
 
 export function loadLocalProfile(){
@@ -29,11 +31,10 @@ export async function registerUser(username, pin){
   if (!username || !pin) throw new Error('Vul username en pin in');
   if (pin.length < 4 || pin.length > 8) throw new Error('Pincode moet 4–8 tekens zijn');
   const uid = await deriveId(username, pin);
-  // schrijf basis user record (if not exists)
   const userRef = ref(db, `users/${uid}/profile`);
   const snap = await get(userRef);
-  if (snap.exists()) throw new Error('Gebruikersnaam + pin combinatie bestaat al. Probeer in te loggen.');
-  // create entry with 0 wins
+  if (snap.exists()) throw new Error('Account bestaat al (gebruik login).');
+  // create minimal profile + stats
   await set(ref(db, `users/${uid}/profile`), { username, createdAt: Date.now() });
   await set(ref(db, `users/${uid}/stats`), { wins: 0 });
   const profile = { username, uid, guest: false };
@@ -46,99 +47,126 @@ export async function loginUser(username, pin){
   const uid = await deriveId(username, pin);
   const userRef = ref(db, `users/${uid}/profile`);
   const snap = await get(userRef);
-  if (!snap.exists()) throw new Error('Gebruiker niet gevonden of verkeerde pin.');
+  if (!snap.exists()) throw new Error('Gebruiker niet gevonden of verkeerde pin');
   const profile = { username, uid, guest: false };
   saveLocalProfile(profile);
   return profile;
 }
 
 export function loginGuest(){
-  // create temporary guest profile, stored locally but not saved in users leaderboard
   const rand = Math.floor(Math.random()*9000)+1000;
   const profile = { username: `Gast${rand}`, uid: `guest_${rand}`, guest: true };
   saveLocalProfile(profile);
   return profile;
 }
 
-/* UI wiring for index.html */
-if ($('btn-register')) {
+/* UI wiring — run after DOM ready so we don't accidentally block */
+function attachUiHandlers(){
+  const registerBtn = $('btn-register'), loginBtn = $('btn-login'), guestBtn = $('btn-guest-login');
   const inUser = $('login-username'), inPin = $('login-pin');
   const authCard = $('auth-card'), menuCard = $('menu-card'), lbCard = $('leaderboard-card');
   const subtitle = $('subtitle'), menuUsername = $('menu-username');
+  const logoutBtn = $('btn-logout'), showLbBtn = $('btn-show-leaderboard'), backLbBtn = $('btn-back-menu');
 
-  async function showMenuFor(profile){
+  function showMenuFor(profile){
     authCard.classList.add('hidden');
     menuCard.classList.remove('hidden');
     subtitle.textContent = 'Kies: maak of join een lobby, of bekijk leaderboard';
     menuUsername.textContent = profile.username || profile.name || profile.uid;
   }
 
-  $('btn-register').addEventListener('click', async ()=>{
+  if (registerBtn) registerBtn.addEventListener('click', async ()=>{
     try {
+      registerBtn.disabled = true;
       const username = inUser.value.trim();
       const pin = inPin.value;
       const profile = await registerUser(username, pin);
-      alert('Geregistreerd en ingelogd als ' + profile.username);
+      // do not use alert; show inline via subtitle briefly
+      subtitle.textContent = 'Geregistreerd en ingelogd als ' + profile.username;
       showMenuFor(profile);
-    } catch(e){ alert('Registratie mislukt: ' + e.message); }
+    } catch(e){
+      console.error('Registratie fout:', e);
+      subtitle.textContent = 'Registratie mislukt: ' + e.message;
+    } finally { registerBtn.disabled = false; }
   });
 
-  $('btn-login').addEventListener('click', async ()=>{
+  if (loginBtn) loginBtn.addEventListener('click', async ()=>{
     try {
+      loginBtn.disabled = true;
       const username = inUser.value.trim();
       const pin = inPin.value;
       const profile = await loginUser(username, pin);
-      alert('Ingelogd als ' + profile.username);
+      subtitle.textContent = 'Ingelogd als ' + profile.username;
       showMenuFor(profile);
-    } catch(e){ alert('Login mislukt: ' + e.message); }
+    } catch(e){
+      console.error('Login fout:', e);
+      subtitle.textContent = 'Login mislukt: ' + e.message;
+    } finally { loginBtn.disabled = false; }
   });
 
-  $('btn-guest-login').addEventListener('click', ()=>{
+  if (guestBtn) guestBtn.addEventListener('click', ()=>{
     const profile = loginGuest();
+    subtitle.textContent = 'Ingelogd als gast: ' + profile.username;
     showMenuFor(profile);
   });
 
-  // menu buttons wiring (will be enhanced by lobby.js via events)
-  $('btn-logout').addEventListener('click', ()=>{
+  if (logoutBtn) logoutBtn.addEventListener('click', ()=>{
     localStorage.removeItem(STORAGE_KEY);
     location.reload();
   });
 
-  // leaderboard view
-  $('btn-show-leaderboard').addEventListener('click', async ()=>{
-    // hide menu, show leaderboard card
-    menuCard.classList.add('hidden'); lbCard.classList.remove('hidden');
-    // fetch top users
-    const statsSnap = await get(ref(db, `users`));
-    const users = statsSnap.exists() ? statsSnap.val() : {};
-    // build list
-    const arr = [];
-    for (const uid in users){
-      const p = users[uid];
-      const wins = (p.stats && p.stats.wins) ? p.stats.wins : ((p.stats && p.stats.wins)===0?0: (p.wins||0));
-      const username = (p.profile && p.profile.username) ? p.profile.username : (p.profile && p.profile.name) ? p.profile.name : uid;
-      arr.push({ username, wins, uid });
-    }
-    arr.sort((a,b)=> (b.wins||0) - (a.wins||0));
-    const listEl = $('leaderboard-list');
-    listEl.innerHTML = '';
-    if (arr.length === 0){ listEl.innerHTML = '<div class="muted">Nog geen spelers geregistreerd.</div>'; }
-    arr.slice(0,50).forEach((u,i)=>{
-      const row = document.createElement('div');
-      row.className = 'leader-row';
-      row.innerHTML = `<div class="leader-pos">${i+1}</div><div class="leader-name">${u.username}</div><div class="leader-wins">${u.wins||0} winst(en)</div>`;
-      listEl.appendChild(row);
+  if (showLbBtn){
+    showLbBtn.addEventListener('click', async ()=>{
+      // load leaderboard
+      const listEl = $('leaderboard-list');
+      if (!listEl) return;
+      // hide menu show lbCard
+      $('menu-card').classList.add('hidden'); lbCard.classList.remove('hidden');
+      subtitle.textContent = 'Leaderboard';
+      try {
+        const usersSnap = await get(ref(db, `users`));
+        const users = usersSnap.exists() ? usersSnap.val() : {};
+        const arr = [];
+        for (const uid in users){
+          const u = users[uid];
+          const uname = (u.profile && u.profile.username) ? u.profile.username : uid;
+          const wins = (u.stats && typeof u.stats.wins !== 'undefined') ? u.stats.wins : 0;
+          arr.push({ uname, wins });
+        }
+        arr.sort((a,b) => b.wins - a.wins);
+        listEl.innerHTML = '';
+        if (arr.length === 0) listEl.innerHTML = '<div class="muted">Nog geen spelers.</div>';
+        arr.forEach((x,i)=>{
+          const row = document.createElement('div');
+          row.className = 'leader-row';
+          row.innerHTML = `<div class="leader-pos">${i+1}</div><div class="leader-name">${x.uname}</div><div class="leader-wins">${x.wins} winst(en)</div>`;
+          listEl.appendChild(row);
+        });
+      } catch(e){
+        console.error('Leaderboard load fail', e);
+        listEl.innerHTML = '<div class="muted">Kon leaderboard niet laden.</div>';
+      }
     });
-  });
-
-  $('btn-back-menu').addEventListener('click', ()=>{
-    $('leaderboard-card').classList.add('hidden');
-    $('menu-card').classList.remove('hidden');
-  });
-
-  // if profile already stored locally, auto-show menu
-  const existing = loadLocalProfile();
-  if (existing) {
-    showMenuFor(existing);
   }
+
+  if (backLbBtn) backLbBtn.addEventListener('click', ()=>{
+    lbCard.classList.add('hidden'); $('menu-card').classList.remove('hidden');
+    subtitle.textContent = 'Kies: maak of join een lobby, of bekijk leaderboard';
+  });
+
+  // if a profile exists locally, prefill fields but DO NOT auto-show menu or auto-login
+  const existing = loadLocalProfile();
+  if (existing){
+    inUser.value = existing.username || '';
+    // leave pin blank for security
+    subtitle.textContent = `Welkom terug${existing.username ? ' ' + existing.username : ''}. Vul je pincode in en klik Login.`;
+    console.log('Prefilled username from local profile (no auto-login).');
+  }
+}
+
+/* wait for DOM ready */
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', attachUiHandlers);
+} else {
+  attachUiHandlers();
 }
