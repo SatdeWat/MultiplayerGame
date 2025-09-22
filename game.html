@@ -3,18 +3,22 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Zeeslag — Game</title>
+  <title>Zeeslag — Spel</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
   <main class="wrap">
-    <header class="topbar"><h1>Zeeslag — Spel</h1><p class="subtitle" id="header-sub"></p></header>
+    <header class="topbar">
+      <h1>Zeeslag — Spel</h1>
+      <p class="subtitle" id="header-sub"></p>
+    </header>
 
     <section class="card" id="game-info">
       <div class="row space-between">
         <div>Lobby: <strong id="info-lobby">-</strong></div>
         <div>Jij: <strong id="info-player">-</strong></div>
         <div>Beurt: <strong id="info-turn">-</strong></div>
+        <div>Power: <strong id="info-power">0</strong></div>
       </div>
       <div id="status-msg" class="muted" style="margin-top:8px"></div>
     </section>
@@ -34,24 +38,19 @@
       <div class="board-card">
         <h3>Tegenstander <span id="ready-badge-op" class="muted"></span></h3>
         <div id="board-op" class="board"></div>
+        <div class="controls" style="margin-top:8px">
+          <button id="btn-power" disabled>Gebruik Powershot</button>
+        </div>
       </div>
     </section>
 
     <section class="card">
-      <h3>Acties & animatie</h3>
-      <div id="cannon-area" style="height:120px;position:relative;">
-        <img id="cannon" src="https://cdn-icons-png.flaticon.com/512/3369/3369660.png" alt="cannon" />
-      </div>
+      <h3>Acties & log</h3>
       <div id="log" class="log"></div>
     </section>
 
-    <section class="card">
-      <h3>Leaderboard</h3>
-      <div id="leaderboard" class="leaderboard-list"></div>
-    </section>
   </main>
 
-  <!-- Overlay (not forced on load) -->
   <div id="overlay" class="overlay hidden">
     <div id="overlay-content" class="overlay-content"></div>
     <div id="overlay-actions" class="overlay-actions"></div>
