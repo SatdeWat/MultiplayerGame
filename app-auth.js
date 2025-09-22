@@ -1,11 +1,14 @@
-// app-auth.js (REPLACEMENT) - event-driven, no auto popups
+// app-auth.js (POPUPS VERWIJDERD - gebruik inline status in #subtitle)
+// Dit bestand regelt register/login/guest zonder alerts of overlays.
+// Fouten en successen tonen we alleen in de subtitle (niet-blocking).
+
 import { db } from "./firebase-config.js";
 import { ref, set, get, runTransaction } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
 
 const STORAGE_KEY = "zs_profile_v4";
 const $ = id => document.getElementById(id);
 
-// util hex
+// hex helper
 function buf2hex(buffer){
   return Array.prototype.map.call(new Uint8Array(buffer), x => ('00' + x.toString(16)).slice(-2)).join('');
 }
@@ -34,7 +37,6 @@ export async function registerUser(username, pin){
   const userRef = ref(db, `users/${uid}/profile`);
   const snap = await get(userRef);
   if (snap.exists()) throw new Error('Account bestaat al (gebruik login).');
-  // create minimal profile + stats
   await set(ref(db, `users/${uid}/profile`), { username, createdAt: Date.now() });
   await set(ref(db, `users/${uid}/stats`), { wins: 0 });
   const profile = { username, uid, guest: false };
@@ -60,7 +62,7 @@ export function loginGuest(){
   return profile;
 }
 
-/* UI wiring — run after DOM ready so we don't accidentally block */
+/* UI wiring — geen alerts, geen overlays */
 function attachUiHandlers(){
   const registerBtn = $('btn-register'), loginBtn = $('btn-login'), guestBtn = $('btn-guest-login');
   const inUser = $('login-username'), inPin = $('login-pin');
@@ -76,12 +78,13 @@ function attachUiHandlers(){
   }
 
   if (registerBtn) registerBtn.addEventListener('click', async ()=>{
+    registerBtn.disabled = true;
+    subtitle.textContent = 'Registratie...';
     try {
-      registerBtn.disabled = true;
       const username = inUser.value.trim();
       const pin = inPin.value;
       const profile = await registerUser(username, pin);
-      // do not use alert; show inline via subtitle briefly
+      // inline success
       subtitle.textContent = 'Geregistreerd en ingelogd als ' + profile.username;
       showMenuFor(profile);
     } catch(e){
@@ -91,8 +94,9 @@ function attachUiHandlers(){
   });
 
   if (loginBtn) loginBtn.addEventListener('click', async ()=>{
+    loginBtn.disabled = true;
+    subtitle.textContent = 'Inloggen...';
     try {
-      loginBtn.disabled = true;
       const username = inUser.value.trim();
       const pin = inPin.value;
       const profile = await loginUser(username, pin);
@@ -117,10 +121,8 @@ function attachUiHandlers(){
 
   if (showLbBtn){
     showLbBtn.addEventListener('click', async ()=>{
-      // load leaderboard
       const listEl = $('leaderboard-list');
       if (!listEl) return;
-      // hide menu show lbCard
       $('menu-card').classList.add('hidden'); lbCard.classList.remove('hidden');
       subtitle.textContent = 'Leaderboard';
       try {
@@ -154,13 +156,14 @@ function attachUiHandlers(){
     subtitle.textContent = 'Kies: maak of join een lobby, of bekijk leaderboard';
   });
 
-  // if a profile exists locally, prefill fields but DO NOT auto-show menu or auto-login
+  // prefill username if profile exists locally, but DO NOT auto-open menu or show popups
   const existing = loadLocalProfile();
   if (existing){
     inUser.value = existing.username || '';
-    // leave pin blank for security
     subtitle.textContent = `Welkom terug${existing.username ? ' ' + existing.username : ''}. Vul je pincode in en klik Login.`;
     console.log('Prefilled username from local profile (no auto-login).');
+  } else {
+    subtitle.textContent = 'Login of registreer — geen pop-ups worden getoond.';
   }
 }
 
