@@ -1,46 +1,59 @@
 <!doctype html>
 <html lang="nl">
 <head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
   <title>Zeeslag — Game</title>
-  <link rel="stylesheet" href="css/styles.css"/>
+  <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <main class="container">
-    <h1>Zeeslag</h1>
-    <div id="game-info">
-      <p>Lobby: <span id="info-lobby"></span></p>
-      <p>Jij: <span id="info-player"></span></p>
-      <p>Beurt: <span id="info-turn"></span></p>
-      <p id="placement-timer" class="timer hidden">Plaatsen nog: <span id="timer-count">30</span>s</p>
-    </div>
+  <main class="wrap">
+    <header class="topbar">
+      <h1>Zeeslag — Spel</h1>
+      <p class="subtitle" id="header-sub"></p>
+    </header>
 
-    <div id="boards">
-      <div id="own-board" class="board-wrapper">
+    <section class="card" id="game-info">
+      <div class="row space-between">
+        <div>Lobby: <strong id="info-lobby"></strong></div>
+        <div>Jij: <strong id="info-player"></strong></div>
+        <div>Beurt: <strong id="info-turn">-</strong></div>
+      </div>
+      <div id="placement-timer" class="timer hidden">Plaatsen nog: <span id="timer-count">30</span>s</div>
+    </section>
+
+    <section class="boards">
+      <div class="board-card">
         <h3>Eigen board</h3>
         <div id="board-me" class="board"></div>
         <div class="controls">
+          <button id="btn-rotate">Rotate (H)</button>
           <button id="btn-random">Random plaats schepen</button>
           <button id="btn-ready">Klaar</button>
         </div>
+        <div id="ship-list" class="ship-list"></div>
       </div>
 
-      <div id="opponent-board" class="board-wrapper">
+      <div class="board-card">
         <h3>Tegenstander</h3>
         <div id="board-op" class="board"></div>
       </div>
-    </div>
+    </section>
 
-    <div id="cannon-area">
-      <!-- cannon and flying shot will be appended here -->
-      <img src="assets/cannon.svg" id="cannon" alt="cannon">
-    </div>
-
-    <div id="log"></div>
+    <section class="card">
+      <h3>Acties & animatie</h3>
+      <div id="cannon-area">
+        <img id="cannon" src="https://cdn-icons-png.flaticon.com/512/3369/3369660.png" alt="cannon" />
+      </div>
+      <div id="log" class="log"></div>
+    </section>
   </main>
 
-  <script type="module" src="js/app-auth.js"></script>
-  <script type="module" src="js/game.js"></script>
+  <script type="module" src="firebase-config.js"></script>
+  <script type="module" src="app-auth.js"></script>
+  <script type="module" src="game.js"></script>
 </body>
 </html>
