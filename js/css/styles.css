@@ -1,0 +1,38 @@
+/* css/styles.css - basisstijl */
+:root{--accent:#1e90ff}
+body{font-family:Inter,system-ui,Segoe UI,Arial; margin:0; padding:20px; background:#e8f2ff; color:#123}
+.container{max-width:1100px;margin:0 auto}
+.row{display:flex;gap:8px;align-items:center}
+.hidden{display:none}
+.board-wrapper{display:inline-block;vertical-align:top;width:45%}
+.board{display:grid; border:2px solid #0b3550; background:linear-gradient(#a9d6ff,#78b8ef); min-height:320px; aspect-ratio:1/1; margin:10px; position:relative}
+.board.cell-5{grid-template-columns:repeat(5,1fr)}
+.board.cell-10{grid-template-columns:repeat(10,1fr)}
+.board.cell-15{grid-template-columns:repeat(15,1fr)}
+.tile{border:1px solid rgba(0,0,0,0.08); display:flex;align-items:center;justify-content:center; position:relative; user-select:none; cursor:pointer}
+.tile .reveal{position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:14px}
+.tile.sea{background:transparent}
+.tile.ship{background:rgba(0,0,0,0.07)}
+.tile.hit{background:linear-gradient( #c33, #900); color:#fff}
+.tile.miss{background:rgba(255,255,255,0.6); color:#000}
+
+#cannon-area{position:relative;height:120px;margin-top:10px}
+#cannon{height:80px; position:relative; left:20px; top:10px}
+
+/* shot animation */
+.shot{
+  position:absolute;
+  width:28px; height:28px; pointer-events:none;
+  transition: transform 700ms cubic-bezier(.2,.9,.3,1), opacity 300ms;
+  transform-origin:center;
+  z-index:9999;
+}
+.shot.hide{opacity:0}
+
+/* timer and notes */
+.timer{background:#fff;border:1px solid #ccc;padding:8px;border-radius:6px;display:inline-block}
+.controls{margin-top:8px}
+button{background:var(--accent);color:white;border:0;padding:8px 12px;border-radius:6px;cursor:pointer}
+button:disabled{opacity:0.5; cursor:not-allowed}
+.note{font-size:12px;color:#334}
+#log{margin-top:12px;background:#fff;padding:8px;border-radius:6px}
