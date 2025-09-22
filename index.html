@@ -3,94 +3,257 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Zeeslag — Login</title>
+  <title>Zeeslag — Home</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
   <main class="wrap">
-    <header class="topbar"><h1>Zeeslag</h1><p class="subtitle">Login of speel als gast</p></header>
+    <header class="topbar">
+      <h1>Zeeslag — Home</h1>
+      <p class="subtitle" id="subtitle">Login of registreer om te spelen</p>
+    </header>
 
+    <!-- Auth card (same as before) -->
     <section class="card" id="auth-card">
-      <h2>Login / Registreren</h2>
+      <h2>Login / Registreren / Gast</h2>
       <div class="form-grid">
         <label>Gebruikersnaam <input id="username" placeholder="gebruikersnaam" autocomplete="off"></label>
         <label>Pincode <input id="pincode" placeholder="4–8 tekens" type="password" maxlength="8" autocomplete="off"></label>
       </div>
-      <div class="row" style="margin-top:8px">
+      <div class="row">
         <button id="btn-register">Registreren</button>
         <button id="btn-login">Inloggen</button>
         <button id="btn-guest">Speel als gast</button>
+        <button id="btn-logout" class="hidden">Logout</button>
       </div>
-      <div id="auth-status" class="muted" style="margin-top:12px"></div>
+      <div id="auth-status" class="muted"></div>
     </section>
+
+    <!-- Main menu (visible after login) -->
+    <section class="card hidden" id="main-menu">
+      <h2>Menu</h2>
+
+      <div style="display:flex;gap:12px;align-items:center;margin-bottom:8px">
+        <label>Gamemode:
+          <select id="select-gamemode">
+            <option value="classic">Classic (standard)</option>
+            <option value="power">Power (20×20)</option>
+          </select>
+        </label>
+
+        <label>Board grootte (classic):
+          <select id="select-size">
+            <option value="5">5×5</option>
+            <option value="10" selected>10×10</option>
+            <option value="15">15×15</option>
+          </select>
+        </label>
+
+        <button id="btn-create-lobby">Maak Lobby</button>
+        <input id="join-code" placeholder="Lobby code" style="width:140px">
+        <button id="btn-join-lobby">Join</button>
+      </div>
+
+      <div style="display:flex;gap:16px">
+        <div style="flex:1">
+          <h3>Leaderboard</h3>
+          <div id="leaderboard" class="leaderboard-list"></div>
+        </div>
+
+        <div style="width:320px">
+          <h3>Mijn profiel</h3>
+          <div id="profile-info" class="card"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Create-lobby preview modal (in-page box) -->
+    <section class="card hidden" id="create-preview">
+      <h3>Lobby aangemaakt</h3>
+      <p>De lobby code is:</p>
+      <div id="created-code" style="font-size:20px;font-weight:700"></div>
+      <p>Wacht tot iemand join om naar het spel te gaan. Je kunt de pagina open laten.</p>
+      <div class="row" style="margin-top:8px">
+        <button id="btn-copy-code">Kopieer code</button>
+        <button id="btn-cancel-lobby">Annuleer Lobby</button>
+      </div>
+    </section>
+
   </main>
 
-  <!-- script onderaan, en wacht op DOMContentLoaded -->
   <script type="module">
-    import { registerUser, loginUser, loginGuest } from "./app-auth.js";
+    import { registerUser, loginUser, loginGuest, saveLocalProfile, loadLocalProfile, loginGuest as _loginGuest } from "./app-auth.js";
+    import { db } from "./firebase-config.js";
+    import { ref, set, onValue, get } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
 
     const $ = id => document.getElementById(id);
 
-    document.addEventListener('DOMContentLoaded', ()=> {
-      const status = $("auth-status");
-      const inUser = $("username");
-      const inPin = $("pincode");
-      const btnRegister = $("btn-register");
-      const btnLogin = $("btn-login");
-      const btnGuest = $("btn-guest");
+    // DOM ready
+    document.addEventListener('DOMContentLoaded', ()=>{
 
-      // helper: safe set status
-      function setStatus(msg, isError=false){
-        status.textContent = msg;
-        status.style.color = isError ? "#ffb4b4" : "";
+      // elements
+      const authCard = $('auth-card');
+      const mainMenu = $('main-menu');
+      const createPreview = $('create-preview');
+      const profileInfo = $('profile-info');
+      const authStatus = $('auth-status');
+      const subtitle = $('subtitle');
+      const selectMode = $('select-gamemode');
+      const selectSize = $('select-size');
+
+      // auth controls
+      const btnRegister = $('btn-register'), btnLogin = $('btn-login'), btnGuest = $('btn-guest'), btnLogout = $('btn-logout');
+      const userIn = $('username'), pinIn = $('pincode');
+
+      // menu controls
+      const btnCreateLobby = $('btn-create-lobby'), btnJoinLobby = $('btn-join-lobby'), joinCodeInput = $('join-code');
+      const createdCode = $('created-code'), btnCopy = $('btn-copy-code'), btnCancelLobby = $('btn-cancel-lobby');
+
+      // leaderboard element
+      const leaderboardEl = $('leaderboard');
+
+      // helper: show profile
+      function showProfile(profile){
+        profileInfo.innerHTML = `<div><strong>${profile.username}</strong> ${profile.guest? '(gast)':''}</div><div style="margin-top:6px">UID: ${profile.uid}</div>`;
       }
 
+      // check existing profile
+      const existing = loadLocalProfile();
+      if (existing){
+        authCard.classList.add('hidden');
+        mainMenu.classList.remove('hidden');
+        $('subtitle').textContent = `Welkom, ${existing.username}`;
+        btnLogout.classList.remove('hidden');
+        showProfile(existing);
+      }
+
+      // register
       btnRegister.addEventListener('click', async ()=>{
-        setStatus("Registreren...");
+        authStatus.textContent = "Registreren...";
         try {
-          const u = inUser.value.trim();
-          const p = inPin.value.trim();
-          if (!u || !p) { setStatus("Vul gebruikersnaam en pincode in", true); return; }
-          await registerUser(u, p); // throws on error
-          setStatus("Geregistreerd — doorsturen naar lobby...");
-          setTimeout(()=> location.href = "lobby.html", 350);
-        } catch(err){
-          console.error("register error", err);
-          setStatus("Registratie mislukt: " + (err.message || err), true);
-        }
+          const u = userIn.value.trim();
+          const p = pinIn.value.trim();
+          await registerUser(u,p);
+          authStatus.textContent = "Geregistreerd!";
+          setTimeout(()=> location.reload(), 300);
+        } catch(err){ authStatus.textContent = "Fout: " + err.message; console.error(err); }
       });
 
+      // login
       btnLogin.addEventListener('click', async ()=>{
-        setStatus("Inloggen...");
+        authStatus.textContent = "Inloggen...";
         try {
-          const u = inUser.value.trim();
-          const p = inPin.value.trim();
-          if (!u || !p) { setStatus("Vul gebruikersnaam en pincode in", true); return; }
-          await loginUser(u, p); // throws if not found
-          setStatus("Ingelogd — doorsturen naar lobby...");
-          setTimeout(()=> location.href = "lobby.html", 250);
-        } catch(err){
-          console.error("login error", err);
-          setStatus("Login mislukt: " + (err.message || err), true);
-        }
+          const u = userIn.value.trim();
+          const p = pinIn.value.trim();
+          await loginUser(u,p);
+          authStatus.textContent = "Ingelogd!";
+          setTimeout(()=> location.reload(), 200);
+        } catch(err){ authStatus.textContent = "Login mislukt: " + err.message; console.error(err); }
       });
 
+      // guest
       btnGuest.addEventListener('click', ()=>{
-        try {
-          loginGuest();
-          setStatus("Ingelogd als gast — doorsturen naar lobby...");
-          setTimeout(()=> location.href = "lobby.html", 200);
-        } catch(err){
-          console.error("guest error", err);
-          setStatus("Kon niet als gast inloggen: " + (err.message || err), true);
-        }
+        loginGuest();
+        setTimeout(()=> location.reload(), 150);
       });
 
-      // usability: press Enter on pincode to attempt login
-      inPin.addEventListener('keydown', (e)=>{
-        if (e.key === 'Enter') btnLogin.click();
+      btnLogout.addEventListener('click', ()=>{
+        localStorage.removeItem('zs_profile_v2');
+        location.reload();
       });
-    });
+
+      // leaderboard loader
+      async function loadLeaderboard(){
+        const usersSnap = await get(ref(db, 'users'));
+        const users = usersSnap.exists() ? usersSnap.val() : {};
+        const arr = [];
+        for (const uid in users){
+          const u = users[uid];
+          const name = (u.profile && u.profile.username) ? u.profile.username : uid;
+          const wins = (u.stats && typeof u.stats.wins !== 'undefined') ? u.stats.wins : 0;
+          arr.push({ name, wins });
+        }
+        arr.sort((a,b)=> b.wins - a.wins);
+        leaderboardEl.innerHTML = '';
+        arr.slice(0,20).forEach((u,i)=>{
+          const row = document.createElement('div');
+          row.className = 'leader-row';
+          row.innerHTML = `<div class="leader-pos">${i+1}</div><div class="leader-name">${u.name}</div><div class="leader-wins">${u.wins}</div>`;
+          leaderboardEl.appendChild(row);
+        });
+      }
+      loadLeaderboard();
+
+      // create lobby flow - show code, write to DB, wait for join
+      let activeLobbyCode = null;
+      let activeGameId = null;
+      btnCreateLobby.addEventListener('click', async ()=>{
+        const profile = loadLocalProfile();
+        if (!profile) { authStatus.textContent = "Log in of speel als gast"; return; }
+        btnCreateLobby.disabled = true;
+        // build lobby data
+        const mode = selectMode.value;
+        const size = parseInt(selectSize.value,10);
+        const code = (Math.random().toString(36).slice(2,8)).toUpperCase();
+        const gameId = `game_${Date.now()}_${Math.floor(Math.random()*9999)}`;
+        // create lobby + game root (players contains host)
+        const players = {};
+        players[profile.uid] = { username: profile.username, ready:false, slot:0 };
+        await set(ref(db, `lobbies/${code}`), { gameId, owner: profile.uid, gamemode: mode, size });
+        await set(ref(db, `games/${gameId}`), { players, status: "waiting", gamemode: mode, size, createdAt: Date.now() });
+        activeLobbyCode = code; activeGameId = gameId;
+        createdCode.textContent = code;
+        createPreview.classList.remove('hidden');
+        mainMenu.classList.add('hidden');
+        // watch lobby for a join
+        const lobbyRef = ref(db, `lobbies/${code}`);
+        onValue(lobbyRef, async snap => {
+          const v = snap.val();
+          if (!v) return;
+          // check if another player joined by looking at games/{gameId}/players
+          const pSnap = await get(ref(db, `games/${gameId}/players`));
+          const p = pSnap.exists() ? pSnap.val() : {};
+          const keys = Object.keys(p);
+          if (keys.length >= 2){
+            // go to game page (the game page will allow placement)
+            location.href = `game.html?lobby=${code}`;
+          }
+        });
+      });
+
+      btnCopy.addEventListener('click', ()=> {
+        const code = createdCode.textContent;
+        if (!code) return;
+        navigator.clipboard?.writeText(code).then(()=> authStatus.textContent = "Code gekopieerd naar klembord");
+      });
+
+      btnCancelLobby.addEventListener('click', async ()=>{
+        if (!activeLobbyCode) return;
+        await set(ref(db, `lobbies/${activeLobbyCode}`), null);
+        await set(ref(db, `games/${activeGameId}`), null);
+        createPreview.classList.add('hidden');
+        mainMenu.classList.remove('hidden');
+        activeLobbyCode = null; activeGameId = null;
+      });
+
+      // join via code
+      btnJoinLobby.addEventListener('click', async ()=>{
+        const code = joinCodeInput.value.trim().toUpperCase();
+        const profile = loadLocalProfile();
+        if (!profile) { authStatus.textContent = "Log in of speel als gast"; return; }
+        if (!code) { authStatus.textContent = "Vul een lobby code in"; return; }
+        // get lobby
+        const lobbySnap = await get(ref(db, `lobbies/${code}`));
+        if (!lobbySnap.exists()) { authStatus.textContent = "Lobby niet gevonden"; return; }
+        const lobby = lobbySnap.val();
+        const gameId = lobby.gameId;
+        // add player into game players
+        await set(ref(db, `games/${gameId}/players/${profile.uid}`), { username: profile.username, ready:false, slot:1 });
+        // navigate to game
+        location.href = `game.html?lobby=${code}`;
+      });
+
+    }); // DOMContentLoaded end
   </script>
 </body>
 </html>
