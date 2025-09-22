@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Zeeslag — Lobby</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main class="wrap">
+    <header class="topbar">
+      <h1>Zeeslag — Lobby</h1>
+      <p class="subtitle">Maak of join een lobby</p>
+    </header>
+
+    <section class="card">
+      <div class="row" style="gap:8px;align-items:center;">
+        <input id="join-code" placeholder="Lobby code (bv ABC123)" style="flex:1;padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.06);">
+        <button id="btn-join">Join Lobby</button>
+        <button id="btn-create">Maak Lobby</button>
+        <a href="index.html" style="margin-left:8px;color:#fff;text-decoration:underline">Logout</a>
+      </div>
+      <div id="status-msg" class="muted" style="margin-top:10px"></div>
+    </section>
+
+    <section class="card">
+      <h3>Bestaande lobbies</h3>
+      <div id="lobby-list" style="display:flex;flex-direction:column;gap:8px"></div>
+    </section>
+  </main>
+
+  <script type="module" src="lobby.js"></script>
+</body>
+</html>
