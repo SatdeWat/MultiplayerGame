@@ -1,62 +1,63 @@
 <!doctype html>
 <html lang="nl">
 <head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-  <meta http-equiv="Pragma" content="no-cache">
-  <meta http-equiv="Expires" content="0">
-  <title>Zeeslag — Login & Menu</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Zeeslag — Login</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
   <main class="wrap">
-    <header class="topbar">
-      <h1>Zeeslag — Multiplayer</h1>
-      <p class="subtitle" id="subtitle">Login of speel als gast</p>
-    </header>
+    <header class="topbar"><h1>Zeeslag</h1><p class="subtitle">Login of speel als gast</p></header>
 
-    <!-- LOGIN / REGISTER -->
     <section class="card" id="auth-card">
-      <h2>Inloggen / Registreren</h2>
+      <h2>Login / Registreren</h2>
       <div class="form-grid">
-        <label>Gebruikersnaam <input id="login-username" placeholder="gebruikersnaam"></label>
-        <label>Pincode <input id="login-pin" placeholder="4–8 tekens" type="password" maxlength="8"></label>
+        <label>Gebruikersnaam <input id="username" placeholder="gebruikersnaam"></label>
+        <label>Pincode <input id="pincode" placeholder="4–8 tekens" type="password" maxlength="8"></label>
       </div>
       <div class="row">
         <button id="btn-register">Registreren</button>
         <button id="btn-login">Inloggen</button>
-        <button id="btn-guest-login">Speel als gast</button>
+        <button id="btn-guest">Speel als gast</button>
       </div>
-      <p class="muted">Registreren maakt een account met je username + pincode (4–8 tekens). Gasten worden niet opgeslagen in de leaderboard.</p>
-    </section>
-
-    <!-- MAIN MENU (verborgen voor we ingelogd zijn) -->
-    <section class="card hidden" id="menu-card">
-      <h2>Menu</h2>
-      <div class="row">
-        <button id="btn-create-lobby">Maak lobby</button>
-        <input id="menu-join-code" placeholder="Lobby code (bv ABC123)" />
-        <button id="btn-join-lobby">Join lobby</button>
-        <button id="btn-show-leaderboard">Leaderboard</button>
-        <button id="btn-logout">Logout</button>
-      </div>
-      <div id="menu-info" class="muted" style="margin-top:10px">Ingelogd als <strong id="menu-username">-</strong></div>
-    </section>
-
-    <!-- LEADERBOARD (modal style panel) -->
-    <section class="card hidden" id="leaderboard-card">
-      <h2>Leaderboard</h2>
-      <div id="leaderboard-list" class="leaderboard-list"></div>
-      <div class="row">
-        <button id="btn-back-menu">Terug</button>
-      </div>
+      <div id="auth-status" class="muted" style="margin-top:8px"></div>
     </section>
   </main>
 
-  <!-- scripts: volgorde belangrijk -->
-  <script type="module" src="firebase-config.js"></script>
-  <script type="module" src="app-auth.js"></script>
-  <script type="module" src="lobby.js"></script>
+  <script type="module">
+    import { registerUser, loginUser, loginGuest } from "./app-auth.js";
+
+    const $ = id => document.getElementById(id);
+    const status = $("auth-status");
+
+    $("btn-register").addEventListener("click", async ()=>{
+      status.textContent = "Registreren...";
+      try {
+        const u = $("username").value.trim();
+        const p = $("pincode").value.trim();
+        await registerUser(u,p);
+        status.textContent = "Geregistreerd — doorsturen naar lobby...";
+        setTimeout(()=> location.href = "lobby.html", 350);
+      } catch(e){ status.textContent = "Fout: " + e.message; console.error(e); }
+    });
+
+    $("btn-login").addEventListener("click", async ()=>{
+      status.textContent = "Inloggen...";
+      try {
+        const u = $("username").value.trim();
+        const p = $("pincode").value.trim();
+        await loginUser(u,p);
+        status.textContent = "Ingelogd — doorsturen...";
+        setTimeout(()=> location.href = "lobby.html", 250);
+      } catch(e){ status.textContent = "Fout: " + e.message; console.error(e); }
+    });
+
+    $("btn-guest").addEventListener("click", ()=>{
+      loginGuest();
+      status.textContent = "Ingelogd als gast — doorsturen...";
+      setTimeout(()=> location.href = "lobby.html", 200);
+    });
+  </script>
 </body>
 </html>
