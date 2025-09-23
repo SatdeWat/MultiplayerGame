@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="nl">
+<head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>Game — Classic</title><link rel="stylesheet" href="styles.css"></head>
+<body>
+  <main class="wrap">
+    <header class="topbar"><h1>Classic — Zeeslag</h1><p class="subtitle" id="header-sub"></p></header>
+    <section class="card" id="game-area">
+      <div class="row">
+        <div style="flex:1">
+          <h3>Eigen board <span id="ready-badge-me" class="muted"></span></h3>
+          <div id="board-me" class="board"></div>
+          <div class="controls">
+            <button id="btn-rotate">Rotate (H)</button>
+            <button id="btn-random">Random</button>
+            <button id="btn-ready">Klaar</button>
+          </div>
+        </div>
+        <div style="flex:1">
+          <h3>Tegenstander <span id="ready-badge-op" class="muted"></span></h3>
+          <div id="board-op" class="board"></div>
+          <div class="controls"><div id="info-turn" class="muted">Beurt: -</div></div>
+        </div>
+      </div>
+      <div id="ship-list" class="ship-list" style="margin-top:10px"></div>
+      <div id="log" class="log"></div>
+    </section>
+  </main>
+
+<script type="module">
+import { startGame } from "./game_core.js";
+startGame({ mode: 'classic' });
+</script>
+</body>
+</html>
