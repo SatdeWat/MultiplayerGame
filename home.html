@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Zeeslag — Home</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<main class="wrap">
+  <header class="topbar"><h1>Zeeslag — Home</h1><p class="subtitle">Welkom — kies wat je wilt doen</p></header>
+
+  <section class="card" id="profile-card">
+    <h3>Mijn profiel</h3>
+    <div id="profile-info"></div>
+    <div style="margin-top:8px">
+      <button id="btn-lobby">Lobby</button>
+      <button id="btn-gamemodes">Gamemodes</button>
+      <button id="btn-leaderboard">Leaderboard</button>
+      <button id="btn-logout">Logout</button>
+    </div>
+  </section>
+
+  <section class="card hidden" id="gamemode-list">
+    <h3>Gamemodes</h3>
+    <div class="row" style="gap:12px">
+      <div class="card" style="flex:1">
+        <h4>Classic (alternate turns)</h4>
+        <p>Beurt wisselt altijd na 1 zet. Kies boardgrootte: 10 / 15 / 20</p>
+        <div class="row">
+          <select id="gm-classic-size"><option value="10">10×10</option><option value="15">15×15</option><option value="20">20×20</option></select>
+          <button id="btn-classic-create">Maak Classic Lobby</button>
+        </div>
+      </div>
+
+      <div class="card" style="flex:1">
+        <h4>Power (20×20)</h4>
+        <p>Sink een schip → verdien 1 powershot (3×3 reveal).</p>
+        <div class="row">
+          <button id="btn-power-create">Maak Power Lobby</button>
+        </div>
+      </div>
+
+      <div class="card" style="flex:1">
+        <h4>Streak (hit-repeat)</h4>
+        <p>Als je een hit hebt mag je nog een keer. Zelfde board sizes als classic.</p>
+        <div class="row">
+          <select id="gm-streak-size"><option value="10">10×10</option><option value="15">15×15</option><option value="20">20×20</option></select>
+          <button id="btn-streak-create">Maak Streak Lobby</button>
+        </div>
+      </div>
+    </div>
+    <div style="margin-top:8px">
+      <button id="btn-back-menu">Terug</button>
+    </div>
+  </section>
+</main>
+
+<script type="module">
+import { loadLocalProfile } from "./app-auth.js";
+import { db } from "./firebase-config.js";
+import { ref, set } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
+
+const $ = id => document.getElementById(id);
+
+document.addEventListener('DOMContentLoaded', ()=>{
+  const profile = loadLocalProfile();
+  if (!profile) { location.href = "index.html"; return; }
+  $('profile-info').innerHTML = `<strong>${profile.username}</strong> ${profile.guest? '(gast)':''} <div class="muted">UID: ${profile.uid}</div>`;
+
+  $('btn-logout').addEventListener('click', ()=>{ localStorage.removeItem('zs_profile_v2'); location.href = "index.html"; });
+  $('btn-lobby').addEventListener('click', ()=> location.href = "lobby.html");
+  $('btn-leaderboard').addEventListener('click', ()=> location.href = "leaderboard.html");
+  $('btn-gamemodes').addEventListener('click', ()=> { $('gamemode-list').classList.remove('hidden'); });
+
+  $('btn-back-menu').addEventListener('click', ()=> { $('gamemode-list').classList.add('hidden'); });
+
+  // create lobby helpers
+  function makeCode(len=6){ const chars="ABCDEFGHJKMNPQRSTUVWXYZ23456789"; let s=""; for(let i=0;i<len;i++) s+=chars[Math.floor(Math.random()*chars.length)]; return s; }
+
+  async function createLobby(gamemode, size){
+    const uid = profile.uid;
+    const code = makeCode(6);
+    const gameId = `game_${Date.now()}_${Math.floor(Math.random()*9999)}`;
+    const players = {}; players[uid] = { username: profile.username, ready:false, slot:0 };
+    await set(ref(db, `lobbies/${code}`), { gameId, owner: uid, gamemode, size });
+    await set(ref(db, `games/${gameId}`), { players, status: "waiting", gamemode, size, createdAt: Date.now() });
+    // show code in the create-preview page (redirecting to lobby where host can see code)
+    location.href = `lobby.html?code=${code}`;
+  }
+
+  $('btn-classic-create').addEventListener('click', ()=> createLobby('classic', parseInt($('gm-classic-size').value,10)));
+  $('btn-power-create').addEventListener('click', ()=> createLobby('power', 20));
+  $('btn-streak-create').addEventListener('click', ()=> createLobby('streak', parseInt($('gm-streak-size').value,10)));
+});
+</script>
+</body>
+</html>
