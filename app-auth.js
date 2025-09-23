@@ -4,7 +4,6 @@ import { ref, get, set, runTransaction } from "https://www.gstatic.com/firebasej
 
 const STORAGE_KEY = "zs_profile_v2";
 
-// helper to hex
 function buf2hex(buffer){
   return Array.prototype.map.call(new Uint8Array(buffer), x => ('00' + x.toString(16)).slice(-2)).join('');
 }
@@ -26,44 +25,40 @@ export function loadLocalProfile(){
 }
 
 export function clearLocalProfile(){
-  try { localStorage.removeItem(STORAGE_KEY); } catch(e){}
+  try { localStorage.removeItem(STORAGE_KEY); } catch(e){ }
 }
 
-// register: create user profile + stats
 export async function registerUser(username, pin){
-  if (!username || !pin) throw new Error("Vul username + pincode in");
-  if (pin.length < 4 || pin.length > 8) throw new Error("Pincode moet 4–8 tekens zijn");
+  if (!username || !pin) throw new Error("Vul gebruikersnaam en pincode in");
+  if (pin.length < 4 || pin.length > 8) throw new Error("Pincode 4–8 tekens");
   const uid = await deriveUid(username, pin);
   const profileRef = ref(db, `users/${uid}/profile`);
   const snap = await get(profileRef);
   if (snap.exists()) throw new Error("Account bestaat al");
   await set(ref(db, `users/${uid}/profile`), { username, createdAt: Date.now() });
   await set(ref(db, `users/${uid}/stats`), { wins: 0 });
-  const profileObj = { username, uid, guest: false };
-  saveLocalProfile(profileObj);
-  return profileObj;
+  const obj = { username, uid, guest: false };
+  saveLocalProfile(obj);
+  return obj;
 }
 
-// login checks profile exists
 export async function loginUser(username, pin){
-  if (!username || !pin) throw new Error("Vul username + pincode in");
+  if (!username || !pin) throw new Error("Vul gebruikersnaam en pincode in");
   const uid = await deriveUid(username, pin);
   const snap = await get(ref(db, `users/${uid}/profile`));
   if (!snap.exists()) throw new Error("Gebruiker niet gevonden of verkeerde pincode");
-  const profileObj = { username, uid, guest: false };
-  saveLocalProfile(profileObj);
-  return profileObj;
+  const obj = { username, uid, guest: false };
+  saveLocalProfile(obj);
+  return obj;
 }
 
-// guest local-only
 export function loginGuest(){
-  const rand = Math.floor(Math.random()*90000) + 1000;
-  const profileObj = { username: `Gast${rand}`, uid: `guest_${Date.now()}_${rand}`, guest: true };
-  saveLocalProfile(profileObj);
-  return profileObj;
+  const rand = Math.floor(Math.random()*90000)+1000;
+  const obj = { username: `Gast${rand}`, uid: `guest_${Date.now()}_${rand}`, guest: true };
+  saveLocalProfile(obj);
+  return obj;
 }
 
-// increment wins
 export async function incrementWinsForUid(uid){
   if (!uid) return;
   const winsRef = ref(db, `users/${uid}/stats/wins`);
