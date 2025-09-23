@@ -3,32 +3,101 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Zeeslag — Lobby</title>
+  <title>Lobby — Zeeslag</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <main class="wrap">
-    <header class="topbar">
-      <h1>Zeeslag — Lobby</h1>
-      <p class="subtitle">Maak of join een lobby</p>
-    </header>
+<main class="wrap">
+  <header class="topbar"><h1>Lobby</h1><p class="subtitle">Maak of join een lobby</p></header>
 
-    <section class="card">
-      <div class="row" style="gap:8px;align-items:center;">
-        <input id="join-code" placeholder="Lobby code (bv ABC123)" style="flex:1;padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.06);">
-        <button id="btn-join">Join Lobby</button>
-        <button id="btn-create">Maak Lobby</button>
-        <a href="index.html" style="margin-left:8px;color:#fff;text-decoration:underline">Logout</a>
+  <section class="card" id="create-box">
+    <div id="create-area">
+      <label>Join code <input id="join-code" placeholder="ABC123"></label>
+      <div class="row" style="margin-top:8px">
+        <button id="btn-join">Join</button>
+        <a href="home.html" style="margin-left:8px">Terug</a>
       </div>
-      <div id="status-msg" class="muted" style="margin-top:10px"></div>
-    </section>
+      <div id="join-status" class="muted" style="margin-top:8px"></div>
+    </div>
 
-    <section class="card">
-      <h3>Bestaande lobbies</h3>
-      <div id="lobby-list" style="display:flex;flex-direction:column;gap:8px"></div>
-    </section>
-  </main>
+    <div id="host-area" class="hidden" style="margin-top:12px">
+      <h3>Lobby aangemaakt</h3>
+      <div>Code: <span id="host-code" style="font-weight:700"></span></div>
+      <div style="margin-top:8px">Wacht tot iemand join. Zodra iemand join, wordt je doorgestuurd naar het spel om schepen te plaatsen.</div>
+      <div style="margin-top:8px" class="muted">Je kunt deze pagina open laten.</div>
+      <div style="margin-top:8px"><button id="btn-cancel">Annuleer lobby</button></div>
+    </div>
+  </section>
+</main>
 
-  <script type="module" src="lobby.js"></script>
+<script type="module">
+import { loadLocalProfile } from "./app-auth.js";
+import { db } from "./firebase-config.js";
+import { ref, get, set, onValue } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
+
+const $ = id => document.getElementById(id);
+document.addEventListener('DOMContentLoaded', async ()=>{
+  const profile = loadLocalProfile();
+  if (!profile) { location.href = "index.html"; return; }
+
+  const params = new URLSearchParams(location.search);
+  const codeFromHome = params.get('code');
+  const joinInput = $('join-code'), btnJoin = $('btn-join'), joinStatus = $('join-status');
+  const hostArea = $('host-area'), hostCodeEl = $('host-code'), btnCancel = $('btn-cancel');
+
+  // If we have a code param, host just created it from home -> show code and wait
+  if (codeFromHome){
+    // show host panel
+    hostArea.classList.remove('hidden');
+    $('create-area').classList.add('hidden');
+    hostCodeEl.textContent = codeFromHome;
+    // listen for player count on games/{gameId}/players
+    const lobbySnap = await get(ref(db, `lobbies/${codeFromHome}`));
+    if (!lobbySnap.exists()){ joinStatus.textContent = "Lobby niet gevonden"; return; }
+    const lobby = lobbySnap.val();
+    const gameId = lobby.gameId;
+    onValue(ref(db, `games/${gameId}/players`), snap => {
+      const players = snap.val() || {};
+      const keys = Object.keys(players);
+      if (keys.length >= 2){
+        // someone joined — redirect to appropriate game page
+        const gm = lobby.gamemode || 'classic';
+        const target = gm === 'power' ? 'game_power.html' : (gm === 'streak' ? 'game_streak.html' : 'game_classic.html');
+        location.href = `${target}?lobby=${codeFromHome}`;
+      }
+    });
+    btnCancel.addEventListener('click', async ()=>{
+      await set(ref(db, `lobbies/${codeFromHome}`), null);
+      // remove game if exists
+      if (lobby && lobby.gameId) await set(ref(db, `games/${lobby.gameId}`), null);
+      location.href = "home.html";
+    });
+    return;
+  }
+
+  // Join flow
+  btnJoin.addEventListener('click', async ()=>{
+    const code = joinInput.value.trim().toUpperCase();
+    if (!code) { joinStatus.textContent = "Vul een code in"; return; }
+    joinStatus.textContent = "Joining...";
+    try {
+      const lobbySnap = await get(ref(db, `lobbies/${code}`));
+      if (!lobbySnap.exists()){ joinStatus.textContent = "Lobby niet gevonden"; return; }
+      const lobby = lobbySnap.val();
+      const gameId = lobby.gameId;
+      // add player
+      await set(ref(db, `games/${gameId}/players/${profile.uid}`), { username: profile.username, ready:false, slot:1 });
+      // redirect to corresponding game page
+      const gm = lobby.gamemode || 'classic';
+      const target = gm === 'power' ? 'game_power.html' : (gm === 'streak' ? 'game_streak.html' : 'game_classic.html');
+      location.href = `${target}?lobby=${code}`;
+    } catch(err){
+      joinStatus.textContent = "Kon niet joinen: " + (err.message || err);
+      console.error(err);
+    }
+  });
+
+});
+</script>
 </body>
 </html>
