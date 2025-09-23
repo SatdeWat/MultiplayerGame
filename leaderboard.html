@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="nl">
+<head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>Leaderboard</title><link rel="stylesheet" href="styles.css"></head>
+<body>
+<main class="wrap">
+  <header class="topbar"><h1>Leaderboard</h1></header>
+  <section class="card">
+    <div id="leaderboard" class="leaderboard-list"></div>
+    <div style="margin-top:10px"><button onclick="location.href='home.html'">Terug</button></div>
+  </section>
+</main>
+
+<script type="module">
+import { db } from "./firebase-config.js";
+import { ref, get } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
+const lb = document.getElementById('leaderboard');
+(async ()=>{
+  const usersSnap = await get(ref(db, 'users'));
+  const users = usersSnap.exists() ? usersSnap.val() : {};
+  const arr = [];
+  for (const uid in users){
+    const u = users[uid];
+    const name = (u.profile && u.profile.username) ? u.profile.username : uid;
+    const wins = (u.stats && typeof u.stats.wins !== 'undefined') ? u.stats.wins : 0;
+    arr.push({ name, wins });
+  }
+  arr.sort((a,b)=> b.wins - a.wins);
+  lb.innerHTML = '';
+  arr.slice(0,50).forEach((x,i)=>{
+    const row = document.createElement('div'); row.className='leader-row';
+    row.innerHTML = `<div class="leader-pos">${i+1}</div><div class="leader-name">${x.name}</div><div class="leader-wins">${x.wins}</div>`;
+    lb.appendChild(row);
+  });
+})();
+</script>
+</body>
+</html>
