@@ -1,4 +1,4 @@
-// game_core.js — shared game logic for classic / power / streak
+// game_core.js — shared logic with sounds, confetti, rematch and cleanup
 import { db } from "./firebase-config.js";
 import { loadLocalProfile, incrementWinsForUid } from "./app-auth.js";
 import { ref, get, set, onValue, update, push, runTransaction } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
@@ -7,30 +7,121 @@ const $ = id => document.getElementById(id);
 const alpha = n => String.fromCharCode(65 + n);
 const cellName = (r,c) => `${alpha(r)}${c+1}`;
 
-export async function startGame({ mode }) {
+// simple WebAudio sound palette (no external files)
+class Snd {
+  constructor(){
+    this.ctx = null;
+    try { this.ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch(e){ this.ctx = null; }
+  }
+  _play(freq, type='sine', dur=0.08, gain=0.12){
+    if (!this.ctx) return;
+    const o = this.ctx.createOscillator();
+    const g = this.ctx.createGain();
+    o.type = type;
+    o.frequency.value = freq;
+    g.gain.value = gain;
+    o.connect(g); g.connect(this.ctx.destination);
+    o.start();
+    g.gain.exponentialRampToValueAtTime(0.0001, this.ctx.currentTime + dur);
+    o.stop(this.ctx.currentTime + dur + 0.02);
+  }
+  hit(){ this._play(420,'sawtooth',0.12,0.14) }
+  miss(){ this._play(220,'sine',0.14,0.06) }
+  sunk(){ this._play(140,'square',0.3,0.18); this._play(420,'sine',0.2,0.1) }
+  win(){ this._play(880,'sine',0.18,0.18); this._play(660,'sine',0.28,0.12) }
+  lose(){ this._play(150,'sine',0.2,0.14) }
+}
+const S = new Snd();
+
+// confetti (simple particle burst on canvas)
+function createConfetti(){
+  let canvas = document.getElementById('confetti-canvas');
+  if (!canvas){
+    canvas = document.createElement('canvas');
+    canvas.id = 'confetti-canvas';
+    document.body.appendChild(canvas);
+  }
+  const ctx = canvas.getContext('2d');
+  function fit(){ canvas.width = innerWidth; canvas.height = innerHeight; }
+  fit(); window.addEventListener('resize', fit);
+  const pieces = [];
+  function spawnBurst(x = innerWidth/2, y = innerHeight/4, count=60){
+    for (let i=0;i<count;i++){
+      pieces.push({
+        x, y,
+        vx: (Math.random()-0.5) * 8,
+        vy: Math.random()*-6 - 2,
+        size: Math.random()*8+4,
+        rot: Math.random()*360,
+        vr: (Math.random()-0.5)*12,
+        color: `hsl(${Math.floor(Math.random()*360)},70%,60%)`,
+        life: 120 + Math.floor(Math.random()*60)
+      });
+    }
+  }
+  function step(){
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    for (let i = pieces.length-1; i>=0; i--){
+      const p = pieces[i];
+      p.vy += 0.18; // gravity
+      p.x += p.vx;
+      p.y += p.vy;
+      p.rot += p.vr;
+      p.life--;
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.rotate(p.rot * Math.PI / 180);
+      ctx.fillStyle = p.color;
+      ctx.fillRect(-p.size/2, -p.size/2, p.size, p.size*0.6);
+      ctx.restore();
+      if (p.life <= 0 || p.y > canvas.height + 50) pieces.splice(i,1);
+    }
+    requestAnimationFrame(step);
+  }
+  step();
+  return { spawn: spawnBurst };
+}
+const conf = createConfetti();
+
+// helper small overlay (non-blocking)
+function showOverlayMessage(html){
+  let overlay = document.querySelector('.overlay');
+  if (!overlay){
+    overlay = document.createElement('div'); overlay.className = 'overlay';
+    overlay.innerHTML = `<div class="overlay-inner"><div id="overlay-inner-content"></div><div class="overlay-actions"><button id="overlay-close">OK</button></div></div>`;
+    document.body.appendChild(overlay);
+    document.getElementById('overlay-close').addEventListener('click', ()=> overlay.classList.add('hidden'));
+  }
+  overlay.classList.remove('hidden');
+  document.getElementById('overlay-inner-content').innerHTML = html;
+}
+
+// main exported function
+export async function startGame({ mode }){
   const profile = loadLocalProfile();
   if (!profile) { location.href = "index.html"; return; }
-
   const qs = new URLSearchParams(location.search);
   const lobbyCode = qs.get('lobby');
-  if (!lobbyCode) { $('log') && ($('log').textContent = 'Geen lobby code'); return; }
+  if (!lobbyCode) { showOverlayMessage('Geen lobby code'); return; }
 
-  // UI references (common)
+  // UI refs
   const boardMeEl = $('board-me'), boardOpEl = $('board-op'), shipListEl = $('ship-list');
-  const btnRandom = $('btn-random'), btnRotate = $('btn-rotate'), btnReady = $('btn-ready');
-  const infoTurn = $('info-turn'), infoPower = $('info-power'), btnPower = $('btn-power');
-  const readyBadgeMe = $('ready-badge-me'), readyBadgeOp = $('ready-badge-op'), logEl = $('log');
+  const btnRandom = $('btn-random'), btnRotate = $('btn-rotate'), btnReady = $('btn-ready'), btnPower = $('btn-power');
+  const infoTurn = $('info-turn'), infoPower = $('info-power'), logEl = $('log');
+  const readyBadgeMe = $('ready-badge-me'), readyBadgeOp = $('ready-badge-op');
 
   // state
   let gameId = null;
   let size = 10;
   let myId = profile.uid;
   let myBoard = {}, oppBoard = {};
-  let shipSizes = [5,4,3]; // default
+  let shipSizes = [5,4,3];
   let placedShips = [];
   let currentShipIndex = 0;
   let orientation = 'H';
-  let powerCount = 0;
+  let awaitingPowerTarget = false;
+  let cleanupTimeoutHandle = null;
+  let rematchRequests = {}; // {uid:true}
 
   function log(msg){ if (!logEl) return; const d = document.createElement('div'); d.textContent = `${new Date().toLocaleTimeString()} — ${msg}`; logEl.prepend(d); }
 
@@ -39,36 +130,45 @@ export async function startGame({ mode }) {
     el.classList.remove('cell-5','cell-10','cell-15','cell-20');
     el.classList.add(`cell-${n}`);
     el.style.gridTemplateRows = `repeat(${n},1fr)`;
-    for (let r=0;r<n;r++){
-      for (let c=0;c<n;c++){
-        const tile = document.createElement('div');
-        tile.className = 'tile sea';
-        tile.dataset.r = r; tile.dataset.c = c; tile.dataset.cell = cellName(r,c);
-        el.appendChild(tile);
-      }
+    for (let r=0;r<n;r++) for (let c=0;c<n;c++){
+      const tile = document.createElement('div');
+      tile.className = 'tile sea';
+      tile.dataset.r = r; tile.dataset.c = c; tile.dataset.cell = cellName(r,c);
+      el.appendChild(tile);
     }
   }
 
+  function setSizes(s){
+    size = s;
+    createGrid(boardMeEl, size);
+    createGrid(boardOpEl, size);
+    placedShips = []; currentShipIndex = 0; orientation='H';
+    if (mode === 'power' && size === 20) shipSizes = [5,4,4,3,3,2];
+    else if (size <=5) shipSizes = [3,2,2];
+    else shipSizes = [5,4,3];
+    myBoard = {}; oppBoard = {};
+    for (let r=0;r<size;r++) for (let c=0;c<size;c++) myBoard[cellName(r,c)] = 'empty';
+    renderShipList(); renderBoards();
+  }
+
   function renderBoards(){
-    Array.from(boardMeEl.children).forEach(tile=>{
-      const id = tile.dataset.cell;
-      tile.className = 'tile sea'; tile.innerHTML = '';
-      if (myBoard[id] === 'ship') tile.classList.add('ship');
-      if (myBoard[id] === 'hit') { tile.classList.add('hit'); tile.innerHTML = '💥'; }
-      if (myBoard[id] === 'miss') { tile.classList.add('miss'); tile.innerHTML = '🌊'; }
-      if (myBoard[id] === 'sunk') { tile.classList.add('sunk'); tile.innerHTML = '☠️'; }
+    if (boardMeEl) Array.from(boardMeEl.children).forEach(tile=>{
+      const id = tile.dataset.cell; tile.className='tile sea'; tile.innerHTML='';
+      if (myBoard[id]==='ship') tile.classList.add('ship');
+      if (myBoard[id]==='hit'){ tile.classList.add('hit'); tile.innerHTML='💥'; }
+      if (myBoard[id]==='miss'){ tile.classList.add('miss'); tile.innerHTML='🌊'; }
+      if (myBoard[id]==='sunk'){ tile.classList.add('sunk'); tile.innerHTML='☠️'; }
     });
-    Array.from(boardOpEl.children).forEach(tile=>{
-      const id = tile.dataset.cell;
-      tile.className = 'tile sea'; tile.innerHTML = '';
-      if (oppBoard[id] === 'hit') { tile.classList.add('hit'); tile.innerHTML = '🔥'; }
-      if (oppBoard[id] === 'miss') { tile.classList.add('miss'); tile.innerHTML = '🌊'; }
-      if (oppBoard[id] === 'sunk') { tile.classList.add('sunk'); tile.innerHTML = '☠️'; }
+    if (boardOpEl) Array.from(boardOpEl.children).forEach(tile=>{
+      const id = tile.dataset.cell; tile.className='tile sea'; tile.innerHTML='';
+      if (oppBoard[id]==='hit'){ tile.classList.add('hit'); tile.innerHTML='🔥'; }
+      if (oppBoard[id]==='miss'){ tile.classList.add('miss'); tile.innerHTML='🌊'; }
+      if (oppBoard[id]==='sunk'){ tile.classList.add('sunk'); tile.innerHTML='☠️'; }
     });
   }
 
   function renderShipList(){
-    if(!shipListEl) return;
+    if (!shipListEl) return;
     shipListEl.innerHTML = '';
     shipSizes.forEach((s,i)=>{
       const pill = document.createElement('div');
@@ -79,104 +179,189 @@ export async function startGame({ mode }) {
     });
   }
 
-  function setSizesByChoice(s){
-    size = s;
-    createGrid(boardMeEl, size);
-    createGrid(boardOpEl, size);
-    const small = (size <= 5);
-    if (mode === 'power' && size === 20) shipSizes = [5,4,4,3,3,2];
-    else if (small) shipSizes = [3,2,2];
-    else shipSizes = [5,4,3];
-    placedShips = [];
-    currentShipIndex = 0;
-    orientation = 'H';
-    myBoard = {}; oppBoard = {};
-    for (let r=0;r<size;r++) for (let c=0;c<size;c++) myBoard[cellName(r,c)] = 'empty';
-    renderShipList(); renderBoards();
-  }
-
   function canPlace(r,c,s,orient){
-    const coords = [];
+    const coords=[];
     for (let i=0;i<s;i++){
-      const rr = r + (orient === 'V' ? i : 0);
-      const cc = c + (orient === 'H' ? i : 0);
-      if (rr < 0 || rr >= size || cc < 0 || cc >= size) return null;
+      const rr = r + (orient==='V'?i:0), cc = c + (orient==='H'?i:0);
+      if (rr<0||rr>=size||cc<0||cc>=size) return null;
       coords.push(cellName(rr,cc));
     }
-    for (const k of coords) if (myBoard[k] === 'ship') return null;
+    for (const k of coords) if (myBoard[k]==='ship') return null;
     return coords;
   }
 
   function placeShipAt(cellId){
-    const r = cellId.charCodeAt(0) - 65;
-    const c = parseInt(cellId.slice(1),10) - 1;
+    const r = cellId.charCodeAt(0)-65, c = parseInt(cellId.slice(1),10)-1;
     const s = shipSizes[currentShipIndex];
-    if (!s || s<=0){ log('Geen schip geselecteerd'); return; }
+    if (!s||s<=0){ log('Geen schip geselecteerd'); return; }
     const coords = canPlace(r,c,s,orientation);
     if (!coords){ log('Kan hier niet plaatsen'); return; }
-    coords.forEach(k => myBoard[k] = 'ship');
-    placedShips.push({ id: 'ship_'+Date.now(), cells: coords, size: s });
-    shipSizes[currentShipIndex] = 0;
-    while (currentShipIndex < shipSizes.length && shipSizes[currentShipIndex] === 0) currentShipIndex++;
+    coords.forEach(k=> myBoard[k]='ship');
+    placedShips.push({ id:'ship_'+Date.now(), cells:coords, size:s });
+    shipSizes[currentShipIndex]=0;
+    while(currentShipIndex<shipSizes.length && shipSizes[currentShipIndex]===0) currentShipIndex++;
     renderShipList(); renderBoards();
   }
 
   function randomPlaceAll(){
-    for (const k in myBoard) myBoard[k] = 'empty';
-    placedShips = [];
+    for(const k in myBoard) myBoard[k]='empty';
+    placedShips=[];
     const sizes = shipSizes.slice().filter(x=>x>0);
     for (const s of sizes){
-      let tries = 0, placed = false;
-      while (!placed && tries < 1000){
-        const r = Math.floor(Math.random()*size), c = Math.floor(Math.random()*size);
-        const o = Math.random()<0.5 ? 'H' : 'V';
+      let tries=0, placed=false;
+      while(!placed && tries<1000){
+        const r=Math.floor(Math.random()*size), c=Math.floor(Math.random()*size);
+        const o=Math.random()<0.5?'H':'V';
         const coords = canPlace(r,c,s,o);
-        if (coords){ coords.forEach(k=> myBoard[k] = 'ship'); placedShips.push({ id:'ship_'+Date.now()+'_'+Math.floor(Math.random()*9999), cells: coords, size: s }); placed = true; }
+        if (coords){ coords.forEach(k=> myBoard[k]='ship'); placedShips.push({id:'ship_'+Date.now(),cells:coords,size:s}); placed=true;}
         tries++;
       }
     }
-    for (let i=0;i<shipSizes.length;i++) shipSizes[i] = 0;
+    for (let i=0;i<shipSizes.length;i++) shipSizes[i]=0;
     renderShipList(); renderBoards();
   }
 
-  // find gameId from lobby and join
-  async function joinGameAndInit(){
+  /* DB setup & listeners */
+  async function initFromLobby(){
     const lobbySnap = await get(ref(db, `lobbies/${lobbyCode}`));
     if (!lobbySnap.exists()) throw new Error('Lobby niet gevonden');
     const lobby = lobbySnap.val();
     gameId = lobby.gameId;
-    // apply lobby size/gamemode if available
-    const gm = lobby.gamemode || mode || 'classic';
-    const sizeFromLobby = lobby.size || (gm === 'power' ? 20 : 10);
-    setSizesByChoice(sizeFromLobby);
-    // ensure player present
+    const sizeFromLobby = lobby.size || (lobby.gamemode==='power'?20:10);
+    setSizes(sizeFromLobby);
+    // ensure player entry
     const meRef = ref(db, `games/${gameId}/players/${profile.uid}`);
     const meSnap = await get(meRef);
     if (!meSnap.exists()){
       const playersSnap = await get(ref(db, `games/${gameId}/players`));
-      let slot = 1; if (!playersSnap.exists() || Object.keys(playersSnap.val()).length === 0) slot = 0;
+      let slot = 1; if (!playersSnap.exists() || Object.keys(playersSnap.val()).length===0) slot=0;
       await set(meRef, { username: profile.username, ready:false, slot });
     }
-    // listen for players changes
+
+    // players listener
     onValue(ref(db, `games/${gameId}/players`), snap=>{
       const players = snap.val() || {};
-      // update ready badges & opponent presence
-      if (players[profile.uid] && players[profile.uid].ready) readyBadgeMe.textContent = '✔️ Klaar'; else readyBadgeMe.textContent = '';
-      let opp = null;
-      for (const pid in players) if (pid !== profile.uid){ opp = players[pid]; }
-      if (opp) readyBadgeOp.textContent = opp.ready ? '✔️ Klaar' : ''; else readyBadgeOp.textContent = '';
+      readyBadgeMe.textContent = players[profile.uid] && players[profile.uid].ready ? '✔️ Klaar' : '';
+      let oppFound=false;
+      for(const pid in players) if (pid !== profile.uid){ oppFound=true; readyBadgeOp.textContent = players[pid].ready ? '✔️ Klaar':''; }
+      if (!oppFound) readyBadgeOp.textContent = '';
     });
 
+    // game state listener
     onValue(ref(db, `games/${gameId}`), async snap=>{
       const g = snap.val() || {};
       if (g.turnUid) infoTurn && (infoTurn.textContent = (g.turnUid === profile.uid ? 'Jij' : 'Tegenstander'));
-      if (g.status === 'in_progress') await refreshBoards();
-      if (g.status === 'finished'){
+      if (g.status==='in_progress') {
+        await refreshBoards();
+        // cancel pending cleanup if any
+        if (cleanupTimeoutHandle) { clearTimeout(cleanupTimeoutHandle); cleanupTimeoutHandle = null; }
+      }
+      if (g.status==='finished'){
         const winner = g.winner;
-        if (winner === profile.uid) { document.body.classList.add('win-anim'); setTimeout(()=>document.body.classList.remove('win-anim'),2000); alert('Je hebt gewonnen!'); }
-        else { document.body.classList.add('lose-anim'); setTimeout(()=>document.body.classList.remove('lose-anim'),2000); alert('Je hebt verloren'); }
+        if (winner === profile.uid){
+          S.win();
+          conf.spawn();
+          showOverlayRematch(true);
+        } else {
+          S.lose();
+          showOverlayRematch(false);
+        }
+        // schedule cleanup: remove lobby & game after 2 minutes if both don't request rematch
+        if (cleanupTimeoutHandle) clearTimeout(cleanupTimeoutHandle);
+        cleanupTimeoutHandle = setTimeout(async ()=>{
+          try {
+            await set(ref(db, `lobbies/${lobbyCode}`), null);
+            await set(ref(db, `games/${gameId}`), null);
+            console.log('Auto-cleanup executed for', lobbyCode, gameId);
+          } catch(e){ console.error('cleanup failed', e); }
+        }, 120000); // 2 minutes
       }
     });
+
+    // moves listener
+    onValue(ref(db, `games/${gameId}/moves`), snap=>{
+      const moves = snap.val() || {};
+      const keys = Object.keys(moves);
+      if (!keys.length) return;
+      const last = moves[keys[keys.length-1]];
+      if (last.result === 'hit') S.hit();
+      if (last.result === 'miss') S.miss();
+      if (last.result === 'sunk') S.sunk();
+      log(`Move: ${last.by} -> ${last.cell} (${last.result || '...'})`);
+      setTimeout(()=> refreshBoards(), 300);
+    });
+
+    // power count listener (for this player)
+    onValue(ref(db, `games/${gameId}/players/${profile.uid}/power`), snap=>{
+      const v = snap.val() || 0;
+      if (infoPower) infoPower.textContent = v;
+      if (btnPower) btnPower.disabled = !(v>0);
+    });
+
+    // rematch requests listener
+    onValue(ref(db, `games/${gameId}/rematchRequests`), snap => {
+      rematchRequests = snap.val() || {};
+      // if both requested rematch -> create new game with same settings
+      if (rematchRequests && Object.keys(rematchRequests).length >= 2){
+        createRematchGame();
+      }
+    });
+  }
+
+  function showSmallOverlay(msg){
+    showOverlayMessage(`<div>${msg}</div>`);
+  }
+
+  // rematch UI overlay (non-blocking)
+  function showOverlayRematch(didWin){
+    const overlayHtml = `
+      <div style="text-align:center">
+        <h2>${didWin ? 'Je hebt gewonnen!' : 'Je hebt verloren'}</h2>
+        <p>Klik rematch om opnieuw te spelen met dezelfde instellingen.</p>
+        <div class="rematch-bar">
+          <button id="rematch-yes">Rematch</button>
+          <button id="rematch-no" class="ghost">Terug naar home</button>
+        </div>
+      </div>
+    `;
+    showOverlayMessage(overlayHtml);
+    // wire buttons
+    setTimeout(()=>{
+      const yes = document.getElementById('rematch-yes');
+      const no = document.getElementById('rematch-no');
+      if (yes) yes.onclick = async ()=>{
+        // send rematch request to DB
+        await set(ref(db, `games/${gameId}/rematchRequests/${profile.uid}`), true);
+        showSmallOverlay('Rematch-request verzonden — wacht op tegenstander');
+      };
+      if (no) no.onclick = ()=> { location.href = 'home.html'; };
+    }, 50);
+  }
+
+  async function createRematchGame(){
+    // create a fresh game with the same settings; move both players into it
+    try {
+      const gSnap = await get(ref(db, `games/${gameId}`));
+      if (!gSnap.exists()) return;
+      const g = gSnap.val();
+      // simple id
+      const newGameId = `game_${Date.now()}_${Math.floor(Math.random()*9999)}`;
+      const playersSnap = await get(ref(db, `games/${gameId}/players`));
+      const players = playersSnap.exists() ? playersSnap.val() : {};
+      // build new players object with same usernames but reset ready/boards
+      const newPlayers = {};
+      for (const pid in players) newPlayers[pid] = { username: players[pid].username, ready:false, slot:players[pid].slot || 0 };
+      await set(ref(db, `games/${newGameId}`), { players: newPlayers, status: 'waiting', gamemode: g.gamemode, size: g.size, createdAt: Date.now() });
+      // update or recreate lobby with same code
+      await set(ref(db, `lobbies/${lobbyCode}`), { gameId: newGameId, owner: g.owner || Object.keys(newPlayers)[0], gamemode: g.gamemode, size: g.size });
+      // clear rematchRequests
+      await set(ref(db, `games/${gameId}/rematchRequests`), null);
+      // redirect both players automatically via lobby listener in their tabs
+      // we will also remove old game after short delay
+      setTimeout(async ()=> {
+        try { await set(ref(db, `games/${gameId}`), null); } catch(e){ console.warn('old game remove failed', e); }
+      }, 5000);
+    } catch(e){ console.error('createRematchGame error', e); }
   }
 
   async function saveBoardReady(){
@@ -184,8 +369,8 @@ export async function startGame({ mode }) {
     await set(ref(db, `games/${gameId}/players/${profile.uid}/board`), myBoard);
     await set(ref(db, `games/${gameId}/players/${profile.uid}/ships`), placedShips);
     await set(ref(db, `games/${gameId}/players/${profile.uid}/ready`), true);
-    log('Board opgeslagen en ready');
-    // check if both ready -> start
+    log('Je bent klaar');
+    // check both ready
     const gSnap = await get(ref(db, `games/${gameId}`));
     const g = gSnap.val() || {};
     const players = g.players || {};
@@ -197,26 +382,21 @@ export async function startGame({ mode }) {
         await set(ref(db, `games/${gameId}/status`), 'in_progress');
         await set(ref(db, `games/${gameId}/turnUid`), starter);
         log('Game gestart');
-      } else {
-        log('Wachten op tegenstander...');
-      }
-    } else {
-      log('Wachten op tegenstander...');
-    }
+      } else log('Wacht op tegenstander...');
+    } else log('Wacht op tegenstander...');
   }
 
   async function makeMove(cell){
     if (!gameId) return;
-    // determine target id
     const gSnap = await get(ref(db, `games/${gameId}`));
     const g = gSnap.val() || {};
     const players = g.players || {};
     let targetId = null;
     for (const pid in players) if (pid !== profile.uid) targetId = pid;
-    if (!targetId) { log('Geen tegenstander'); return; }
+    if (!targetId){ log('Geen tegenstander'); return; }
 
     const mvRef = push(ref(db, `games/${gameId}/moves`));
-    await set(mvRef, { by: profile.uid, cell, ts: Date.now(), status: 'processing' });
+    await set(mvRef, { by: profile.uid, cell, ts: Date.now(), status:'processing' });
 
     const cellRef = ref(db, `games/${gameId}/players/${targetId}/board/${cell}`);
     await runTransaction(cellRef, cur => {
@@ -226,6 +406,7 @@ export async function startGame({ mode }) {
     });
     const resSnap = await get(cellRef);
     const result = resSnap.val();
+    // write result summary
     await set(ref(db, `games/${gameId}/moves/${mvRef.key}/result`), result);
     log(`Schot op ${cell} => ${result}`);
 
@@ -238,7 +419,7 @@ export async function startGame({ mode }) {
         let allHit = true;
         for (const c of ship.cells){
           const st = (await get(ref(db, `games/${gameId}/players/${targetId}/board/${c}`))).val();
-          if (st !== 'hit' && st !== 'sunk') { allHit = false; break; }
+          if (st !== 'hit' && st !== 'sunk'){ allHit=false; break; }
         }
         if (allHit){
           const updates = {};
@@ -249,28 +430,23 @@ export async function startGame({ mode }) {
           await update(ref(db, `/`), updates);
           await set(ref(db, `games/${gameId}/moves/${mvRef.key}/sunkShipId`), ship.id);
           log('Ship gezonken!');
-          // power awarding
+          S.sunk();
           if (mode === 'power'){
-            await runTransaction(ref(db, `games/${gameId}/players/${profile.uid}/power`), cur => (cur||0) + 1);
+            await runTransaction(ref(db, `games/${gameId}/players/${profile.uid}/power`), cur => (cur||0)+1);
             log('Power verdiend!');
           }
         }
       }
-      // turn rule: streak mode and hit => keep turn; classic => switch; user requested variations:
-      if (mode === 'streak') {
-        await set(ref(db, `games/${gameId}/turnUid`), profile.uid); // keep turn on hit
-      } else {
-        // classic and power: on hit -> still allow same player (user earlier wanted both variants; final spec: classic = alternate always, streak = keep on hit, earlier user asked also mode where hit gives extra turn; I implement: classic always switches, streak keeps, power keeps on hit)
-        if (mode === 'classic') {
-          // in classic we switch on every shot regardless: so switch to other player
-          await set(ref(db, `games/${gameId}/turnUid`), targetId);
-        } else {
-          // power: keep turn on hit
-          await set(ref(db, `games/${gameId}/turnUid`), profile.uid);
-        }
+      // turn rules per mode
+      if (mode === 'streak'){
+        await set(ref(db, `games/${gameId}/turnUid`), profile.uid); // keep turn
+      } else if (mode === 'classic'){
+        await set(ref(db, `games/${gameId}/turnUid`), targetId);
+      } else if (mode === 'power'){
+        await set(ref(db, `games/${gameId}/turnUid`), targetId);
       }
     } else {
-      // miss => set miss & switch to other
+      // miss
       await set(ref(db, `games/${gameId}/players/${targetId}/board/${cell}`), 'miss');
       await set(ref(db, `games/${gameId}/turnUid`), targetId);
     }
@@ -283,24 +459,23 @@ export async function startGame({ mode }) {
       await set(ref(db, `games/${gameId}/status`), 'finished');
       await set(ref(db, `games/${gameId}/winner`), profile.uid);
       log('Je hebt gewonnen!');
+      S.win();
+      conf.spawn();
       if (!profile.guest) await incrementWinsForUid(profile.uid);
     }
   }
 
-  // powershot: only in power mode; reveal 3x3 and apply hits/misses; consumes 1 power and keeps turn
   async function powerShot(centerCell){
     if (mode !== 'power') return;
     const powSnap = await get(ref(db, `games/${gameId}/players/${profile.uid}/power`));
     const count = powSnap.exists() ? powSnap.val() : 0;
     if (count <= 0){ log('Geen powershots'); return; }
-    const r = centerCell.charCodeAt(0) - 65;
-    const c = parseInt(centerCell.slice(1),10) - 1;
+    const r = centerCell.charCodeAt(0)-65, c = parseInt(centerCell.slice(1),10)-1;
     const cells = [];
     for (let dr=-1; dr<=1; dr++) for (let dc=-1; dc<=1; dc++){
-      const rr = r+dr, cc = c+dc;
+      const rr=r+dr, cc=c+dc;
       if (rr>=0 && rr<size && cc>=0 && cc<size) cells.push(cellName(rr,cc));
     }
-    // apply transactions for each cell
     const playersSnap = await get(ref(db, `games/${gameId}/players`));
     const playersObj = playersSnap.val() || {};
     let targetId = null;
@@ -314,13 +489,13 @@ export async function startGame({ mode }) {
         return;
       });
     }
-    // consume one power
     await runTransaction(ref(db, `games/${gameId}/players/${profile.uid}/power`), cur => Math.max((cur||0)-1,0));
-    await set(ref(db, `games/${gameId}/turnUid`), profile.uid); // keep turn
+    await set(ref(db, `games/${gameId}/turnUid`), profile.uid); // keep turn after power usage
     log('Powershot uitgevoerd');
+    S.hit();
+    refreshBoards();
   }
 
-  // refresh local boards from DB
   async function refreshBoards(){
     if (!gameId) return;
     const playersSnap = await get(ref(db, `games/${gameId}/players`));
@@ -332,7 +507,7 @@ export async function startGame({ mode }) {
         for (const k in b) myBoard[k] = b[k];
       } else {
         const b = p.board || {};
-        for (const k in b){
+        for (const k in b) {
           if (b[k] === 'hit' || b[k] === 'miss' || b[k] === 'sunk') oppBoard[k] = b[k];
         }
       }
@@ -340,71 +515,60 @@ export async function startGame({ mode }) {
     renderBoards();
   }
 
-  // attach UI listeners
+  // UI events
   boardMeEl?.addEventListener('click', e=>{
-    const t = e.target.closest('.tile'); if (!t) return;
-    placeShipAt(t.dataset.cell);
+    const t = e.target.closest('.tile'); if (!t) return; placeShipAt(t.dataset.cell);
   });
 
   boardOpEl?.addEventListener('click', async e=>{
-    const t = e.target.closest('.tile'); if (!t) return;
+    const t = e.target.closest('.tile'); if(!t) return;
     const cell = t.dataset.cell;
-    // if awaiting power target handled elsewhere
-    // only allow shooting when game in_progress and your turn
+    if (awaitingPowerTarget && mode === 'power'){
+      awaitingPowerTarget = false;
+      await powerShot(cell);
+      return;
+    }
     const gSnap = await get(ref(db, `games/${gameId}`));
     const g = gSnap.val() || {};
     if (!g) return;
-    if (g.status !== 'in_progress'){ log('Wacht tot spel start'); return; }
+    if (g.status !== 'in_progress'){ log('Wacht tot spel gestart is'); return; }
     if (g.turnUid !== profile.uid){ log('Niet jouw beurt'); return; }
     const known = oppBoard[cell];
     if (known === 'hit' || known === 'miss' || known === 'sunk'){ log('Al geschoten'); return; }
-    // if power mode and awaiting power selection state handled by overlay, but here we'll treat normal shot
     await makeMove(cell);
   });
 
   btnRandom?.addEventListener('click', randomPlaceAll);
-  btnRotate?.addEventListener('click', ()=> { orientation = orientation === 'H' ? 'V' : 'H'; btnRotate.textContent = `Rotate (${orientation})`; });
-  btnReady?.addEventListener('click', async ()=> {
-    await saveBoardReady();
-  });
+  btnRotate?.addEventListener('click', ()=>{ orientation = orientation==='H' ? 'V' : 'H'; btnRotate.textContent = `Rotate (${orientation})`; });
+  btnReady?.addEventListener('click', async ()=> { await saveBoardReady(); });
 
   if (btnPower){
-    btnPower.addEventListener('click', ()=> {
-      // enable one-time overlay instruct and wait for click on boardOp to execute powerShot
-      log('Klik op een cel bij tegenstander om powershot uit te voeren');
-      const handler = async (e)=> {
-        const t = e.target.closest('.tile'); if (!t) return;
-        boardOpEl.removeEventListener('click', handler, true);
-        await powerShot(t.dataset.cell);
-        await refreshBoards();
-      };
-      boardOpEl.addEventListener('click', handler, true);
+    btnPower.addEventListener('click', ()=>{
+      log('Klik op een cel in het vijandelijke bord om powershot uit te voeren');
+      awaitingPowerTarget = true;
     });
   }
 
-  // initialize flow
-  await joinGameAndInit();
-  // load initial boards
+  // tutorial overlay if not seen
+  (function maybeShowTutorial(){
+    const seen = localStorage.getItem('zs_tutorial_seen_v1');
+    if (seen) return;
+    const tutorialHtml = `<div class="tutorial"><h2>How to play — quick</h2>
+      <ul>
+        <li>Maak of join een lobby.</li>
+        <li>Plaats je schepen handmatig of kies <strong>Random</strong>.</li>
+        <li>Klik <strong>Klaar</strong> als je klaar bent; als beide spelers klaar zijn start het spel.</li>
+        <li>Classic: beurt wisselt altijd. Streak: hit → nog een beurt. Power: sink ship → +1 powershot (3×3).</li>
+      </ul>
+      <div style="text-align:center"><button id="tutorial-ok">Akkoord</button></div></div>`;
+    showOverlayMessage(tutorialHtml);
+    setTimeout(()=> {
+      const ok = document.getElementById('tutorial-ok');
+      if (ok) ok.onclick = ()=> { document.querySelector('.overlay').classList.add('hidden'); localStorage.setItem('zs_tutorial_seen_v1','1'); };
+    }, 50);
+  })();
+
+  // init
+  await initFromLobby().catch(err => { console.error(err); showSmallOverlay('Kon lobby niet laden: '+(err.message||err)); });
   await refreshBoards();
-
-  // listen moves for updates
-  onValue(ref(db, `games/${gameId}/moves`), snap => {
-    const moves = snap.val() || {};
-    const keys = Object.keys(moves);
-    if (!keys.length) return;
-    const last = moves[keys[keys.length-1]];
-    log(`Move: ${last.by} -> ${last.cell} (${last.result || '...'})`);
-    // refreshboards after small delay
-    setTimeout(()=> refreshBoards(), 400);
-  });
-
-  // listen for power changes to enable/disable button
-  onValue(ref(db, `games/${gameId}/players/${profile.uid}/power`), snap=>{
-    const v = snap.val() || 0;
-    powerCount = v;
-    if (infoPower) infoPower.textContent = v;
-    if (btnPower) btnPower.disabled = !(v>0);
-  });
-
-  // listen for game status/turn updates handled in joinGameAndInit via onValue
 }
