@@ -2,19 +2,23 @@
   --bg:#071426;
   --card:#eaf4ff;
   --accent:#0b6df1;
-  --muted:#6b7a89;
+  --accent-2:#0a84ff;
+  --muted:#9fb0c4;
+  --danger:#ff5252;
 }
 *{box-sizing:border-box}
-body{margin:0;font-family:Inter,Segoe UI,Helvetica,Arial;background:linear-gradient(180deg,#042033 0%, #07243a 100%);color:#eaf4ff}
+html,body{height:100%}
+body{margin:0;font-family:Inter,Segoe UI,Helvetica,Arial;background:linear-gradient(180deg,#042033 0%, #07243a 100%);color:#eaf4ff;-webkit-font-smoothing:antialiased}
 .wrap{max-width:1100px;margin:20px auto;padding:16px}
 .topbar h1{margin:0;font-size:26px}
 .subtitle{margin:6px 0 0;font-size:13px;color:#d7ecff}
 .card{background:rgba(255,255,255,0.03);padding:16px;border-radius:12px;margin-bottom:16px;box-shadow:0 10px 30px rgba(2,8,23,0.6)}
 .form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px}
 label{display:block;font-size:13px;color:#dff0ff}
-input,select{width:100%;padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.06);background:rgba(255,255,255,0.02);color:var(--card)}
+input,select,textarea{width:100%;padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.06);background:rgba(255,255,255,0.02);color:var(--card)}
 .row{display:flex;gap:8px;align-items:center}
-button{background:var(--accent);color:white;border:0;padding:10px 14px;border-radius:10px;cursor:pointer}
+button{background:linear-gradient(180deg,var(--accent),var(--accent-2));color:white;border:0;padding:10px 14px;border-radius:10px;cursor:pointer;box-shadow:0 6px 18px rgba(11,109,241,0.12)}
+button.ghost{background:transparent;border:1px solid rgba(255,255,255,0.06)}
 .muted{color:var(--muted);font-size:12px}
 .boards{display:flex;gap:16px;flex-wrap:wrap}
 .board-card{flex:1;min-width:320px}
@@ -25,8 +29,8 @@ button{background:var(--accent);color:white;border:0;padding:10px 14px;border-ra
 .board.cell-15{grid-template-columns:repeat(15,1fr)}
 .board.cell-20{grid-template-columns:repeat(20,1fr)}
 .tile.sea{background:linear-gradient(180deg,#80c6ff,#59a7e6)}
-.tile.ship{background:linear-gradient(180deg,#34515f,#2b3b44); color:#fff}
-.tile.hit{background:linear-gradient(180deg,#ff6b6b,#c43a3a); color:white}
+.tile.ship{background:linear-gradient(180deg,#34515f,#2b3b44); color:#fff; box-shadow:inset 0 4px 12px rgba(0,0,0,0.25)}
+.tile.hit{background:linear-gradient(180deg,#ff6b6b,#c43a3a); color:white; transform:translateZ(0)}
 .tile.miss{background:linear-gradient(180deg,#f0f7ff,#cfe9ff)}
 .tile.sunk{background:linear-gradient(180deg,#5b2b2b,#3b1515); color:#fff}
 .ship-list{margin-top:10px;display:flex;gap:8px;flex-wrap:wrap}
@@ -35,7 +39,7 @@ button{background:var(--accent);color:white;border:0;padding:10px 14px;border-ra
 .log{max-height:160px;overflow:auto;margin-top:10px;background:rgba(255,255,255,0.02);padding:8px;border-radius:8px;font-size:13px;color:#e6f6ff}
 .overlay{position:fixed;inset:0;background:rgba(0,0,0,0.55);display:flex;align-items:center;justify-content:center;z-index:9999}
 .overlay.hidden{display:none}
-.overlay-content{background:white;color:#032;padding:18px;border-radius:12px;min-width:280px;max-width:90%;text-align:center}
+.overlay-inner{background:linear-gradient(180deg,#ffffff,#f0f7ff);color:#062;padding:18px;border-radius:12px;min-width:280px;max-width:90%;text-align:center}
 .overlay-actions{margin-top:10px;text-align:center}
 .leader-row{display:flex;align-items:center;gap:8px;padding:8px;background:rgba(255,255,255,0.02);border-radius:8px}
 .leader-pos{width:32px;font-weight:700;color:#ffd700}
@@ -43,3 +47,25 @@ button{background:var(--accent);color:white;border:0;padding:10px 14px;border-ra
 @keyframes winGlow{0%{box-shadow:none}50%{box-shadow:0 20px 80px rgba(11,109,241,0.2)}100%{box-shadow:none}}
 .lose-anim{animation:loseGlow 1600ms ease-in-out}
 @keyframes loseGlow{0%{filter:none}50%{filter:grayscale(1) contrast(0.6)}100%{filter:none}}
+
+/* rematch button */
+.rematch-bar{display:flex;gap:8px;justify-content:center;margin-top:8px}
+
+/* tutorial modal */
+.tutorial {
+  max-width:780px;
+  text-align:left;
+}
+.tutorial h2{margin-top:0}
+.tutorial ul{margin:0 0 12px 20px}
+
+/* confetti canvas (full screen) */
+#confetti-canvas{
+  position:fixed;
+  inset:0;
+  pointer-events:none;
+  z-index:99999;
+}
+
+/* small helpers */
+.hidden{display:none}
