@@ -8,17 +8,24 @@
 </head>
 <body>
 <main class="wrap">
-  <header class="topbar"><h1>Zeeslag — Home</h1><p class="subtitle">Kies wat je wilt doen</p></header>
+  <div class="topbar">
+    <div><h1>Zeeslag — Home</h1><div class="muted">Kies wat je wilt doen</div></div>
+    <div id="profile-info" class="muted"></div>
+  </div>
 
   <section class="card" id="profile-card">
-    <h3>Mijn profiel</h3>
-    <div id="profile-info"></div>
-    <div style="margin-top:10px">
-      <button id="btn-join-lobby">Join Lobby</button>
-      <button id="btn-gamemodes">Gamemodes</button>
-      <button id="btn-leaderboard">Leaderboard</button>
-      <button id="btn-tutorial">How to play</button>
-      <button id="btn-logout">Logout</button>
+    <div style="display:flex;gap:12px;align-items:center;justify-content:space-between">
+      <div>
+        <h3 id="profile-username">—</h3>
+        <div class="muted" id="profile-uid"></div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button id="btn-join-lobby">Join Lobby</button>
+        <button id="btn-gamemodes">Gamemodes</button>
+        <button id="btn-leaderboard">Leaderboard</button>
+        <button id="btn-tutorial">How to play</button>
+        <button id="btn-logout" class="ghost">Logout</button>
+      </div>
     </div>
   </section>
 
@@ -27,6 +34,7 @@
     <div class="row" style="gap:12px;align-items:center">
       <div style="flex:1">
         <h4>Classic</h4>
+        <p class="muted">Iedere speler krijgt 1 beurt per ronde (wisselt altijd).</p>
         <div class="row">
           <select id="gm-classic-size"><option value="10">10×10</option><option value="15">15×15</option><option value="20">20×20</option></select>
           <button id="btn-classic-create">Create Classic</button>
@@ -35,20 +43,20 @@
 
       <div style="flex:1">
         <h4>Power</h4>
-        <div>
-          <button id="btn-power-create">Create Power (20×20)</button>
-        </div>
+        <p class="muted">20×20. Wanneer je een schip volledig zinkt verdien je 1 <strong>powershot</strong>: reveal 3×3 blok.</p>
+        <div><button id="btn-power-create">Create Power (20×20)</button></div>
       </div>
 
       <div style="flex:1">
         <h4>Streak</h4>
+        <p class="muted">Krijg een extra beurt als je een hit scoort (hit → blijf schieten).</p>
         <div class="row">
           <select id="gm-streak-size"><option value="10">10×10</option><option value="15">15×15</option><option value="20">20×20</option></select>
           <button id="btn-streak-create">Create Streak</button>
         </div>
       </div>
     </div>
-    <div style="margin-top:10px"><button id="btn-back-menu">Back</button></div>
+    <div style="margin-top:12px"><button id="btn-back-menu" class="ghost">Back</button></div>
   </section>
 </main>
 
@@ -62,27 +70,33 @@ const $ = id => document.getElementById(id);
 document.addEventListener('DOMContentLoaded', ()=>{
   const profile = loadLocalProfile();
   if (!profile) { location.href = "index.html"; return; }
-  $('profile-info').innerHTML = `<strong>${profile.username}</strong> ${profile.guest? '(gast)':''}<div class="muted">UID: ${profile.uid}</div>`;
+  $('profile-username').textContent = profile.username + (profile.guest ? ' (Gast)' : '');
+  $('profile-uid').textContent = profile.uid;
 
   $('btn-logout').addEventListener('click', ()=> { localStorage.removeItem('zs_profile_v2'); location.href = "index.html"; });
   $('btn-join-lobby').addEventListener('click', ()=> location.href = "lobby.html");
   $('btn-leaderboard').addEventListener('click', ()=> location.href = "leaderboard.html");
-  $('btn-gamemodes').addEventListener('click', ()=> $('gamemode-list').classList.remove('hidden'));
-  $('btn-back-menu').addEventListener('click', ()=> $('gamemode-list').classList.add('hidden'));
+  $('btn-gamemodes').addEventListener('click', ()=> $('gamemode-list').classList.toggle('hidden'));
 
   $('btn-tutorial').addEventListener('click', ()=> {
-    // show tutorial modal (re-uses overlay)
     const overlay = document.querySelector('.overlay');
+    const html = `<div class="tutorial"><h2>How to play — overzicht</h2>
+      <p>Hier een korte uitleg per gamemode:</p>
+      <ul>
+        <li><strong>Classic</strong> — Beurt wisselt altijd. Kies boardgrootte en plaats schepen. Klaar → start.</li>
+        <li><strong>Streak</strong> — Als je een hit hebt mag je direct nog een keer schieten (handig om combo’s te maken).</li>
+        <li><strong>Power</strong> — 20×20. Als je een volledig schip zinkt krijg je 1 Powershot: kies een cel voor een 3×3 reveal. Gebruik strategisch!</li>
+      </ul>
+      <p class="muted">Plaats je schepen handmatig of gebruik <strong>Random</strong>. Wanneer beide spelers klaar zijn begint het spel automatisch.</p>
+      <div style="text-align:center"><button id="tutorial-ok">Akkoord</button></div></div>`;
     if (!overlay){
-      const o = document.createElement('div');
-      o.className = 'overlay';
-      o.innerHTML = `<div class="overlay-inner"><div id="overlay-inner-content"><h2>How to play</h2><p>Place ships, click ready, then shoot.</p></div><div class="overlay-actions"><button id="overlay-close">OK</button></div></div>`;
-      document.body.appendChild(o);
+      const o = document.createElement('div'); o.className = 'overlay'; o.innerHTML = `<div class="overlay-inner">${html}<div class="overlay-actions"><button id="overlay-close">Sluit</button></div></div>`; document.body.appendChild(o);
       document.getElementById('overlay-close').addEventListener('click', ()=> o.classList.add('hidden'));
-      o.classList.remove('hidden');
+      setTimeout(()=> { document.getElementById('tutorial-ok').addEventListener('click', ()=> { o.classList.add('hidden'); localStorage.setItem('zs_tutorial_seen_v1','1'); }); }, 50);
     } else {
       overlay.classList.remove('hidden');
-      document.getElementById('overlay-inner-content').innerHTML = `<h2>How to play</h2><ul><li>Create/join a lobby.</li><li>Place ships and click Ready.</li><li>Classic: alternate turns. Streak: hit -> extra turn. Power: sink ship -> gains powershot.</li></ul>`;
+      document.getElementById('overlay-inner-content').innerHTML = html;
+      setTimeout(()=> { const ok = document.getElementById('tutorial-ok'); if (ok) ok.onclick = ()=> { overlay.classList.add('hidden'); localStorage.setItem('zs_tutorial_seen_v1','1'); }; }, 50);
     }
   });
 
