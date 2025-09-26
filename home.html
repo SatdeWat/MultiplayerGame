@@ -34,28 +34,23 @@
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px">
       <div>
         <h4>Classic</h4>
-        <div class="muted">Beurt wisselt altijd.</div>
-        <div class="row" style="margin-top:8px"><select id="gm-classic-size"><option value="10">10×10</option><option value="15">15×15</option></select><button id="btn-classic-create">Create</button></div>
+        <div class="muted">Standaard 15×15, 4 schepen.</div>
+        <div class="row" style="margin-top:8px"><select id="gm-classic-size"><option value="15">15×15</option></select><button id="btn-classic-create">Create</button></div>
       </div>
       <div>
         <h4>Power</h4>
-        <div class="muted">20×20. Sink ship → +1 powershot (3×3 reveal).</div>
-        <div style="margin-top:8px"><button id="btn-power-create">Create Power</button></div>
+        <div class="muted">20×20. Sink ship → +1 powershot (3×3).</div>
+        <div style="margin-top:8px"><button id="btn-power-create">Create Power (20×20)</button></div>
       </div>
       <div>
         <h4>Streak</h4>
         <div class="muted">Hit → nog een beurt.</div>
-        <div class="row" style="margin-top:8px"><select id="gm-streak-size"><option value="10">10×10</option><option value="15">15×15</option></select><button id="btn-streak-create">Create</button></div>
-      </div>
-      <div>
-        <h4>Fog</h4>
-        <div class="muted">Beperk zicht — je ziet alleen vlakbij onthulde vakjes (1-veld radius).</div>
-        <div style="margin-top:8px"><button id="btn-fog-create">Create Fog</button></div>
+        <div class="row" style="margin-top:8px"><select id="gm-streak-size"><option value="15">15×15</option></select><button id="btn-streak-create">Create</button></div>
       </div>
       <div>
         <h4>Salvo</h4>
-        <div class="muted">Elke beurt 2 schoten per speler; goede optie voor sneller, strategisch spel.</div>
-        <div style="margin-top:8px"><button id="btn-salvo-create">Create Salvo</button></div>
+        <div class="muted">Per beurt schiet je zoveel keer als je nog schepen hebt (4 in het begin).</div>
+        <div style="margin-top:8px"><button id="btn-salvo-create">Create Salvo (15×15)</button></div>
       </div>
     </div>
     <div style="margin-top:12px"><button id="btn-back-menu" class="ghost">Back</button></div>
@@ -91,20 +86,18 @@ document.addEventListener('DOMContentLoaded', ()=>{
     location.href = `lobby.html?code=${code}`;
   }
 
-  $('btn-classic-create').addEventListener('click', ()=> createLobby('classic', parseInt($('gm-classic-size').value,10)));
+  $('btn-classic-create').addEventListener('click', ()=> createLobby('classic', 15));
   $('btn-power-create').addEventListener('click', ()=> createLobby('power', 20));
-  $('btn-streak-create').addEventListener('click', ()=> createLobby('streak', parseInt($('gm-streak-size').value,10)));
-  $('btn-fog-create').addEventListener('click', ()=> createLobby('fog', 15));
-  $('btn-salvo-create').addEventListener('click', ()=> createLobby('salvo', 10));
+  $('btn-streak-create').addEventListener('click', ()=> createLobby('streak', 15));
+  $('btn-salvo-create').addEventListener('click', ()=> createLobby('salvo', 15));
   
   $('btn-tutorial').addEventListener('click', ()=> {
     const html = `<div style="text-align:left"><h3>How to play — korte gids</h3>
       <ul>
-        <li><strong>Classic:</strong> beurt wisselt altijd.</li>
+        <li><strong>Classic:</strong> beurt wisselt altijd. 15×15, 4 schepen (5,4,3,2).</li>
         <li><strong>Streak:</strong> hit → extra beurt.</li>
         <li><strong>Power:</strong> 20×20, sink ship → +1 powershot (3×3).</li>
-        <li><strong>Fog:</strong> beperkt zicht — alleen omliggende onthullingen zichtbaar.</li>
-        <li><strong>Salvo:</strong> je krijgt 2 schoten per beurt (snel en strategisch).</li>
+        <li><strong>Salvo:</strong> per beurt schiet je *zo vaak als je nog schepen hebt* (begint met 4).</li>
       </ul><div style="text-align:center"><button id="tutorial-ok">Ok</button></div></div>`;
     let overlay = document.querySelector('.overlay');
     if (!overlay){ overlay = document.createElement('div'); overlay.className='overlay'; overlay.innerHTML = `<div class="overlay-inner" id="overlay-inner-content">${html}<div class="overlay-actions"><button id="overlay-close">Sluit</button></div></div>`; document.body.appendChild(overlay); document.getElementById('overlay-close').addEventListener('click', ()=> overlay.classList.add('hidden')); setTimeout(()=> document.getElementById('tutorial-ok').addEventListener('click', ()=> overlay.classList.add('hidden')),50); }
