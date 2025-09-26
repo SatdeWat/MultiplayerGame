@@ -1,66 +1,62 @@
 // app-auth.js
+// Beheert lokale profielstorage en eenvoudige stats-updates in Realtime Database.
+// Verwacht firebase-config.js aanwezig met 'db' export.
+
 import { db } from "./firebase-config.js";
-import { ref, get, set, runTransaction } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
+import { ref, set, get, runTransaction } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
 
-const STORAGE_KEY = "zs_profile_v2";
-
-function buf2hex(buffer){
-  return Array.prototype.map.call(new Uint8Array(buffer), x => ('00' + x.toString(16)).slice(-2)).join('');
-}
-
-export async function deriveUid(username, pin){
-  const text = `${username.trim().toLowerCase()}|${pin}`;
-  const enc = new TextEncoder();
-  const data = enc.encode(text);
-  const hash = await crypto.subtle.digest('SHA-256', data);
-  return buf2hex(hash).slice(0,20);
-}
+/*
+ Local profile format stored in localStorage 'zs_profile_v2':
+ { uid, username, guest: true|false }
+*/
 
 export function saveLocalProfile(profile){
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(profile)); } catch(e){ console.warn(e); }
+  localStorage.setItem('zs_profile_v2', JSON.stringify(profile));
 }
 
 export function loadLocalProfile(){
-  try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || "null"); } catch(e){ return null; }
+  try{
+    const s = localStorage.getItem('zs_profile_v2');
+    if (!s) return null;
+    return JSON.parse(s);
+  }catch(e){ return null; }
 }
 
-export function clearLocalProfile(){
-  try { localStorage.removeItem(STORAGE_KEY); } catch(e){ }
+export async function ensureUserProfileOnDb(uid, profile){
+  // writes a minimal public profile if missing
+  const pRef = ref(db, `users/${uid}/profile`);
+  const snap = await get(pRef);
+  if (!snap.exists()){
+    await set(pRef, { username: profile.username || ('User'+uid.slice(0,6)), createdAt: Date.now(), avatarSeed: (profile.username ? profile.username.charAt(0).toUpperCase() : uid.charAt(0).toUpperCase()) });
+  }
 }
 
-export async function registerUser(username, pin){
-  if (!username || !pin) throw new Error("Vul gebruikersnaam en pincode in");
-  if (pin.length < 4 || pin.length > 8) throw new Error("Pincode 4–8 tekens");
-  const uid = await deriveUid(username, pin);
-  const profileRef = ref(db, `users/${uid}/profile`);
-  const snap = await get(profileRef);
-  if (snap.exists()) throw new Error("Account bestaat al");
-  await set(ref(db, `users/${uid}/profile`), { username, createdAt: Date.now() });
-  await set(ref(db, `users/${uid}/stats`), { wins: 0 });
-  const obj = { username, uid, guest: false };
-  saveLocalProfile(obj);
-  return obj;
-}
+// increment stats: games +=1 for both players and winner wins +=1
+export async function incrementGameResults(winnerUid, losersArray){
+  // increment winner .stats.wins and games; increment losers .stats.games
+  // all via runTransaction per user to avoid race conditions
+  try{
+    // winner
+    const wRef = ref(db, `users/${winnerUid}/stats`);
+    await runTransaction(wRef, cur => {
+      cur = cur || { wins:0, games:0, winrate:0 };
+      cur.wins = (cur.wins||0) + 1;
+      cur.games = (cur.games||0) + 1;
+      cur.winrate = Math.round(((cur.wins) / cur.games) * 100);
+      return cur;
+    });
 
-export async function loginUser(username, pin){
-  if (!username || !pin) throw new Error("Vul gebruikersnaam en pincode in");
-  const uid = await deriveUid(username, pin);
-  const snap = await get(ref(db, `users/${uid}/profile`));
-  if (!snap.exists()) throw new Error("Gebruiker niet gevonden of verkeerde pincode");
-  const obj = { username, uid, guest: false };
-  saveLocalProfile(obj);
-  return obj;
-}
-
-export function loginGuest(){
-  const rand = Math.floor(Math.random()*90000)+1000;
-  const obj = { username: `Gast${rand}`, uid: `guest_${Date.now()}_${rand}`, guest: true };
-  saveLocalProfile(obj);
-  return obj;
-}
-
-export async function incrementWinsForUid(uid){
-  if (!uid) return;
-  const winsRef = ref(db, `users/${uid}/stats/wins`);
-  await runTransaction(winsRef, cur => (cur || 0) + 1);
+    // losers
+    for (const lid of (losersArray||[])){
+      const lRef = ref(db, `users/${lid}/stats`);
+      await runTransaction(lRef, cur => {
+        cur = cur || { wins:0, games:0, winrate:0 };
+        cur.games = (cur.games||0) + 1;
+        cur.winrate = cur.games>0 ? Math.round(((cur.wins||0)/cur.games) * 100) : 0;
+        return cur;
+      });
+    }
+  }catch(e){
+    console.error('incrementGameResults error', e);
+  }
 }
