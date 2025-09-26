@@ -1,23 +1,23 @@
 <!doctype html>
 <html lang="nl">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Zeeslag — Home</title>
-  <link rel="stylesheet" href="styles.css">
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Zeeslag — Home</title>
+<link rel="stylesheet" href="styles.css">
 </head>
 <body>
 <main class="wrap">
   <div class="topbar">
-    <div><h1>Zeeslag — Home</h1><div class="muted">Kies wat je wilt doen</div></div>
+    <div><h1>Zeeslag</h1><div class="muted">Kies wat je wilt doen</div></div>
     <div id="profile-info" class="muted"></div>
   </div>
 
-  <section class="card" id="profile-card">
-    <div style="display:flex;gap:12px;align-items:center;justify-content:space-between">
+  <section class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center">
       <div>
         <h3 id="profile-username">—</h3>
-        <div class="muted" id="profile-uid"></div>
+        <div id="profile-uid" class="muted"></div>
       </div>
       <div style="display:flex;gap:8px">
         <button id="btn-join-lobby">Join Lobby</button>
@@ -31,29 +31,31 @@
 
   <section class="card hidden" id="gamemode-list">
     <h3>Gamemodes (maak lobby)</h3>
-    <div class="row" style="gap:12px;align-items:center">
-      <div style="flex:1">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px">
+      <div>
         <h4>Classic</h4>
-        <p class="muted">Iedere speler krijgt 1 beurt per ronde (wisselt altijd).</p>
-        <div class="row">
-          <select id="gm-classic-size"><option value="10">10×10</option><option value="15">15×15</option><option value="20">20×20</option></select>
-          <button id="btn-classic-create">Create Classic</button>
-        </div>
+        <div class="muted">Beurt wisselt altijd.</div>
+        <div class="row" style="margin-top:8px"><select id="gm-classic-size"><option value="10">10×10</option><option value="15">15×15</option></select><button id="btn-classic-create">Create</button></div>
       </div>
-
-      <div style="flex:1">
+      <div>
         <h4>Power</h4>
-        <p class="muted">20×20. Wanneer je een schip volledig zinkt verdien je 1 <strong>powershot</strong>: reveal 3×3 blok.</p>
-        <div><button id="btn-power-create">Create Power (20×20)</button></div>
+        <div class="muted">20×20. Sink ship → +1 powershot (3×3 reveal).</div>
+        <div style="margin-top:8px"><button id="btn-power-create">Create Power</button></div>
       </div>
-
-      <div style="flex:1">
+      <div>
         <h4>Streak</h4>
-        <p class="muted">Krijg een extra beurt als je een hit scoort (hit → blijf schieten).</p>
-        <div class="row">
-          <select id="gm-streak-size"><option value="10">10×10</option><option value="15">15×15</option><option value="20">20×20</option></select>
-          <button id="btn-streak-create">Create Streak</button>
-        </div>
+        <div class="muted">Hit → nog een beurt.</div>
+        <div class="row" style="margin-top:8px"><select id="gm-streak-size"><option value="10">10×10</option><option value="15">15×15</option></select><button id="btn-streak-create">Create</button></div>
+      </div>
+      <div>
+        <h4>Fog</h4>
+        <div class="muted">Beperk zicht — je ziet alleen vlakbij onthulde vakjes (1-veld radius).</div>
+        <div style="margin-top:8px"><button id="btn-fog-create">Create Fog</button></div>
+      </div>
+      <div>
+        <h4>Salvo</h4>
+        <div class="muted">Elke beurt 2 schoten per speler; goede optie voor sneller, strategisch spel.</div>
+        <div style="margin-top:8px"><button id="btn-salvo-create">Create Salvo</button></div>
       </div>
     </div>
     <div style="margin-top:12px"><button id="btn-back-menu" class="ghost">Back</button></div>
@@ -66,43 +68,20 @@ import { db } from "./firebase-config.js";
 import { ref, set } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
 
 const $ = id => document.getElementById(id);
-
 document.addEventListener('DOMContentLoaded', ()=>{
   const profile = loadLocalProfile();
-  if (!profile) { location.href = "index.html"; return; }
-  $('profile-username').textContent = profile.username + (profile.guest ? ' (Gast)' : '');
+  if (!profile) { location.href='index.html'; return; }
+  $('profile-username').textContent = profile.username + (profile.guest ? ' (Gast)':'');
   $('profile-uid').textContent = profile.uid;
 
-  $('btn-logout').addEventListener('click', ()=> { localStorage.removeItem('zs_profile_v2'); location.href = "index.html"; });
-  $('btn-join-lobby').addEventListener('click', ()=> location.href = "lobby.html");
-  $('btn-leaderboard').addEventListener('click', ()=> location.href = "leaderboard.html");
+  $('btn-logout').addEventListener('click', ()=> { localStorage.removeItem('zs_profile_v2'); location.href='index.html'; });
+  $('btn-join-lobby').addEventListener('click', ()=> location.href='lobby.html');
+  $('btn-leaderboard').addEventListener('click', ()=> location.href='leaderboard.html');
   $('btn-gamemodes').addEventListener('click', ()=> $('gamemode-list').classList.toggle('hidden'));
-
-  $('btn-tutorial').addEventListener('click', ()=> {
-    const overlay = document.querySelector('.overlay');
-    const html = `<div class="tutorial"><h2>How to play — overzicht</h2>
-      <p>Hier een korte uitleg per gamemode:</p>
-      <ul>
-        <li><strong>Classic</strong> — Beurt wisselt altijd. Kies boardgrootte en plaats schepen. Klaar → start.</li>
-        <li><strong>Streak</strong> — Als je een hit hebt mag je direct nog een keer schieten (handig om combo’s te maken).</li>
-        <li><strong>Power</strong> — 20×20. Als je een volledig schip zinkt krijg je 1 Powershot: kies een cel voor een 3×3 reveal. Gebruik strategisch!</li>
-      </ul>
-      <p class="muted">Plaats je schepen handmatig of gebruik <strong>Random</strong>. Wanneer beide spelers klaar zijn begint het spel automatisch.</p>
-      <div style="text-align:center"><button id="tutorial-ok">Akkoord</button></div></div>`;
-    if (!overlay){
-      const o = document.createElement('div'); o.className = 'overlay'; o.innerHTML = `<div class="overlay-inner">${html}<div class="overlay-actions"><button id="overlay-close">Sluit</button></div></div>`; document.body.appendChild(o);
-      document.getElementById('overlay-close').addEventListener('click', ()=> o.classList.add('hidden'));
-      setTimeout(()=> { document.getElementById('tutorial-ok').addEventListener('click', ()=> { o.classList.add('hidden'); localStorage.setItem('zs_tutorial_seen_v1','1'); }); }, 50);
-    } else {
-      overlay.classList.remove('hidden');
-      document.getElementById('overlay-inner-content').innerHTML = html;
-      setTimeout(()=> { const ok = document.getElementById('tutorial-ok'); if (ok) ok.onclick = ()=> { overlay.classList.add('hidden'); localStorage.setItem('zs_tutorial_seen_v1','1'); }; }, 50);
-    }
-  });
+  $('btn-back-menu').addEventListener('click', ()=> $('gamemode-list').classList.add('hidden'));
 
   function makeCode(len=6){ const chars="ABCDEFGHJKMNPQRSTUVWXYZ23456789"; let s=""; for(let i=0;i<len;i++) s+=chars[Math.floor(Math.random()*chars.length)]; return s; }
-
-  async function createLobby(gamemode, size){
+  async function createLobby(gamemode,size){
     const uid = profile.uid;
     const code = makeCode(6);
     const gameId = `game_${Date.now()}_${Math.floor(Math.random()*9999)}`;
@@ -115,6 +94,22 @@ document.addEventListener('DOMContentLoaded', ()=>{
   $('btn-classic-create').addEventListener('click', ()=> createLobby('classic', parseInt($('gm-classic-size').value,10)));
   $('btn-power-create').addEventListener('click', ()=> createLobby('power', 20));
   $('btn-streak-create').addEventListener('click', ()=> createLobby('streak', parseInt($('gm-streak-size').value,10)));
+  $('btn-fog-create').addEventListener('click', ()=> createLobby('fog', 15));
+  $('btn-salvo-create').addEventListener('click', ()=> createLobby('salvo', 10));
+  
+  $('btn-tutorial').addEventListener('click', ()=> {
+    const html = `<div style="text-align:left"><h3>How to play — korte gids</h3>
+      <ul>
+        <li><strong>Classic:</strong> beurt wisselt altijd.</li>
+        <li><strong>Streak:</strong> hit → extra beurt.</li>
+        <li><strong>Power:</strong> 20×20, sink ship → +1 powershot (3×3).</li>
+        <li><strong>Fog:</strong> beperkt zicht — alleen omliggende onthullingen zichtbaar.</li>
+        <li><strong>Salvo:</strong> je krijgt 2 schoten per beurt (snel en strategisch).</li>
+      </ul><div style="text-align:center"><button id="tutorial-ok">Ok</button></div></div>`;
+    let overlay = document.querySelector('.overlay');
+    if (!overlay){ overlay = document.createElement('div'); overlay.className='overlay'; overlay.innerHTML = `<div class="overlay-inner" id="overlay-inner-content">${html}<div class="overlay-actions"><button id="overlay-close">Sluit</button></div></div>`; document.body.appendChild(overlay); document.getElementById('overlay-close').addEventListener('click', ()=> overlay.classList.add('hidden')); setTimeout(()=> document.getElementById('tutorial-ok').addEventListener('click', ()=> overlay.classList.add('hidden')),50); }
+    else { overlay.classList.remove('hidden'); document.getElementById('overlay-inner-content').innerHTML = html; setTimeout(()=> { const ok = document.getElementById('tutorial-ok'); if (ok) ok.onclick = ()=> overlay.classList.add('hidden'); },50); }
+  });
 });
 </script>
 </body>
