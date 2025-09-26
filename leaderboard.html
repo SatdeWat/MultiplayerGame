@@ -1,54 +1,173 @@
 <!doctype html>
 <html lang="nl">
-<head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>Leaderboard</title><link rel="stylesheet" href="styles.css"></head>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Leaderboard — Zeeslag</title>
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    /* Extra styling specifiek voor leaderboard (doet geen pijn als je deze 2x hebt) */
+    .lb-wrap{max-width:1100px;margin:24px auto;padding:18px}
+    .lb-hero{display:flex;align-items:center;gap:16px;margin-bottom:14px}
+    .lb-hero .title{font-size:22px;font-weight:800}
+    .lb-controls{display:flex;gap:8px;margin-left:auto;align-items:center}
+    .search-input{padding:8px 12px;border-radius:10px;border:1px solid rgba(255,255,255,0.06);background:transparent;color:var(--card);min-width:220px}
+    .sort-btn{padding:8px 12px;border-radius:10px;border:1px solid rgba(255,255,255,0.05);background:transparent;color:var(--card);cursor:pointer}
+    .leaders{display:grid;grid-template-columns:repeat(1,1fr);gap:10px;margin-top:12px}
+    .leader-card{display:flex;align-items:center;gap:12px;padding:12px;border-radius:12px;background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));border:1px solid rgba(255,255,255,0.03)}
+    .leader-rank{width:60px;text-align:center;font-weight:900;font-size:20px}
+    .leader-avatar{width:56px;height:56px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-weight:900}
+    .leader-info{flex:1}
+    .leader-name{font-weight:800;font-size:16px}
+    .leader-meta{font-size:13px;color:var(--muted)}
+    .leader-stats{display:flex;gap:10px;align-items:center}
+    .stat-pill{background:rgba(255,255,255,0.02);padding:8px 10px;border-radius:10px;font-weight:800;min-width:70px;text-align:center}
+    .you-badge{background:linear-gradient(90deg,#22c55e,#16a34a);padding:6px 10px;border-radius:999px;color:#062;font-weight:800;margin-left:8px}
+    .top-three{box-shadow:0 10px 30px rgba(11,109,241,0.08);transform:scale(1.01)}
+    .empty-state{padding:24px;text-align:center;color:var(--muted);border-radius:12px;background:rgba(255,255,255,0.02)}
+    @media(min-width:720px){ .leaders{grid-template-columns:repeat(1,1fr)} }
+  </style>
+</head>
 <body>
-<main class="wrap">
-  <div class="topbar">
-    <div><h1>Leaderboard</h1><div class="muted">Top spelers</div></div>
-    <div><button onclick="location.href='home.html'" class="ghost">Terug</button></div>
-  </div>
+  <main class="lb-wrap">
+    <div class="topbar">
+      <div>
+        <h1 class="title">Leaderboard</h1>
+        <div class="muted">Top spelers — wins, games en winrate</div>
+      </div>
+      <div class="lb-controls">
+        <input id="search" class="search-input" placeholder="Zoek gebruiker..." />
+        <button id="sortWins" class="sort-btn">Sort: Wins ▼</button>
+        <button id="refresh" class="sort-btn">Refresh</button>
+        <button onclick="location.href='home.html'" class="ghost">Terug</button>
+      </div>
+    </div>
 
-  <section class="card">
-    <div id="leaderboard" class="leaderboard-list"></div>
-  </section>
-</main>
+    <section class="card">
+      <div id="summary" style="display:flex;gap:12px;align-items:center;margin-bottom:10px">
+        <div style="display:flex;gap:8px;align-items:center">
+          <div style="font-weight:900;font-size:28px">🏆</div>
+          <div>
+            <div style="font-weight:900" id="total-players">—</div>
+            <div class="muted">Players</div>
+          </div>
+        </div>
+        <div style="margin-left:12px" class="muted" id="totalsummary">—</div>
+      </div>
+
+      <div id="leaders" class="leaders"></div>
+
+      <div id="empty" class="empty-state hidden">Nog geen spelers gevonden.</div>
+    </section>
+  </main>
 
 <script type="module">
 import { db } from "./firebase-config.js";
+import { loadLocalProfile } from "./app-auth.js";
 import { ref, get } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
 
-const lb = document.getElementById('leaderboard');
+const $ = id => document.getElementById(id);
+let data = [];
+let sortKey = 'wins'; // or 'winrate' or 'games'
+let sortDesc = true;
+const profile = loadLocalProfile();
 
-function medalByIndex(i){
-  if (i===0) return "🥇";
-  if (i===1) return "🥈";
-  if (i===2) return "🥉";
-  return "🏅";
+async function fetchUsers(){
+  try {
+    const snap = await get(ref(db,'users'));
+    const users = snap.exists() ? snap.val() : {};
+    const arr = [];
+    for (const uid in users){
+      const u = users[uid];
+      const profileObj = u.profile || {};
+      const stats = u.stats || {};
+      const wins = parseInt(stats.wins||0,10);
+      const games = parseInt(stats.games||0,10);
+      const winrate = games>0 ? Math.round((wins/games)*100) : 0;
+      arr.push({
+        uid,
+        username: profileObj.username || (profile && profile.uid === uid ? profile.username : uid),
+        wins, games, winrate,
+        avatarSeed: (profileObj.avatarSeed || (profileObj.username ? profileObj.username.charAt(0).toUpperCase() : uid.charAt(0).toUpperCase()))
+      });
+    }
+    data = arr;
+    render();
+  } catch(e){
+    console.error(e);
+    $('leaders').innerHTML = `<div class="empty-state">Kon leaderboard niet laden.</div>`;
+  }
 }
 
-(async ()=>{
-  const usersSnap = await get(ref(db, 'users'));
-  const users = usersSnap.exists() ? usersSnap.val() : {};
-  const arr = [];
-  for (const uid in users){
-    const u = users[uid];
-    const name = (u.profile && u.profile.username) ? u.profile.username : uid;
-    const wins = (u.stats && typeof u.stats.wins !== 'undefined') ? u.stats.wins : 0;
-    arr.push({ name, wins, uid });
-  }
-  arr.sort((a,b)=> b.wins - a.wins);
-  lb.innerHTML = '';
-  arr.slice(0,100).forEach((x,i)=>{
-    const row = document.createElement('div'); row.className='leader-row';
-    row.innerHTML = `
-      <div class="leader-pos">${medalByIndex(i)}</div>
-      <div class="avatar">${x.name.charAt(0).toUpperCase()}</div>
-      <div class="leader-name">${x.name}</div>
-      <div class="leader-wins">${x.wins}</div>
-    `;
-    lb.appendChild(row);
+function render(){
+  const list = $('leaders');
+  list.innerHTML = '';
+  if (!data.length){ $('empty').classList.remove('hidden'); $('total-players').textContent = '0'; $('totalsummary').textContent = ''; return; }
+  $('empty').classList.add('hidden');
+  // apply search filter
+  const q = $('search').value.trim().toLowerCase();
+  let filtered = data.filter(d => d.username.toLowerCase().includes(q));
+  // sort
+  filtered.sort((a,b)=>{
+    let A = a[sortKey], B = b[sortKey];
+    // default fallback: if sorting by winrate compare numbers
+    if (sortKey === 'winrate' || sortKey === 'wins' || sortKey === 'games'){ A = Number(A); B = Number(B); }
+    if (A === B) return b.wins - a.wins;
+    return sortDesc ? (B - A) : (A - B);
   });
-})();
+
+  // totals
+  $('total-players').textContent = filtered.length;
+  const totalWins = filtered.reduce((s,x)=> s + (x.wins||0), 0);
+  const totalGames = filtered.reduce((s,x)=> s + (x.games||0), 0);
+  $('totalsummary').textContent = `${totalWins} wins • ${totalGames} games`;
+
+  // render
+  filtered.forEach((u,i)=>{
+    const card = document.createElement('div');
+    card.className = 'leader-card' + (i<3 ? ' top-three' : '');
+    const rank = document.createElement('div'); rank.className='leader-rank'; rank.textContent = (i<3? ['🥇','🥈','🥉'][i] : `#${i+1}`);
+    const avatar = document.createElement('div'); avatar.className='leader-avatar'; avatar.style.background = `linear-gradient(180deg,#0a84ff,#0b6df1)`; avatar.textContent = u.avatarSeed.charAt(0).toUpperCase();
+    const info = document.createElement('div'); info.className='leader-info';
+    const name = document.createElement('div'); name.className='leader-name'; name.textContent = u.username;
+    const meta = document.createElement('div'); meta.className='leader-meta'; meta.textContent = `${u.wins} wins • ${u.games} games • ${u.winrate}% winrate`;
+    info.appendChild(name); info.appendChild(meta);
+    const stats = document.createElement('div'); stats.className='leader-stats';
+    const wins = document.createElement('div'); wins.className='stat-pill'; wins.innerHTML = `<div style="font-size:12px;color:var(--muted)">Wins</div><div style="font-size:16px">${u.wins}</div>`;
+    const games = document.createElement('div'); games.className='stat-pill'; games.innerHTML = `<div style="font-size:12px;color:var(--muted)">Games</div><div style="font-size:16px">${u.games}</div>`;
+    const rate = document.createElement('div'); rate.className='stat-pill'; rate.innerHTML = `<div style="font-size:12px;color:var(--muted)">Winrate</div><div style="font-size:16px">${u.winrate}%</div>`;
+    stats.appendChild(wins); stats.appendChild(games); stats.appendChild(rate);
+
+    // highlight current user
+    if (profile && profile.uid === u.uid){
+      name.innerHTML += `<span class="you-badge">JIJ</span>`;
+      card.style.border = '2px solid rgba(34,197,94,0.12)';
+      card.style.background = 'linear-gradient(180deg, rgba(34,197,94,0.03), rgba(255,255,255,0.01))';
+    }
+
+    card.appendChild(rank);
+    card.appendChild(avatar);
+    card.appendChild(info);
+    card.appendChild(stats);
+    list.appendChild(card);
+  });
+}
+
+$('search').addEventListener('input', ()=> render());
+$('sortWins').addEventListener('click', ()=> {
+  if (sortKey === 'wins') sortDesc = !sortDesc;
+  else { sortKey = 'wins'; sortDesc = true; }
+  $('sortWins').textContent = `Sort: ${sortKey.charAt(0).toUpperCase()+sortKey.slice(1)} ${sortDesc? '▼':'▲'}`;
+  render();
+});
+$('refresh').addEventListener('click', ()=> fetchUsers());
+
+// initial fetch
+fetchUsers();
+
+// auto-refresh every 35s (keeps leaderboard fresh but not chatty)
+setInterval(fetchUsers, 35000);
+
 </script>
 </body>
 </html>
