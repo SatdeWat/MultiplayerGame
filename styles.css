@@ -1,8 +1,8 @@
 :root{
   --bg:#061426;
-  --card: #eaf4ff;
-  --accent: #1385ff;
-  --accent-2: #0a64d6;
+  --card:#eaf4ff;
+  --accent:#1385ff;
+  --accent-2:#0a64d6;
   --muted:#9fb0c4;
   --success:#3bd671;
   --danger:#ff5a5a;
@@ -24,14 +24,15 @@ button.ghost{background:transparent;border:1px solid rgba(10,132,255,0.18);color
 .muted{color:var(--muted);font-size:13px}
 .board{display:grid;border-radius:12px;overflow:hidden;background:linear-gradient(180deg,#e6f7ff12,#d6eef812);aspect-ratio:1/1;position:relative;border:1px solid rgba(255,255,255,0.03)}
 .board .tile{border:1px solid rgba(0,0,0,0.06);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;cursor:pointer; user-select:none; position:relative;transition:transform .06s ease, box-shadow .08s}
-.board.cell-10{grid-template-columns:repeat(10,1fr)}
 .board.cell-15{grid-template-columns:repeat(15,1fr)}
+.board.cell-10{grid-template-columns:repeat(10,1fr)}
 .board.cell-20{grid-template-columns:repeat(20,1fr)}
 .tile.sea{background:linear-gradient(180deg,#6fbefc66,#4c9fec66);box-shadow:inset 0 -6px 18px rgba(0,0,0,0.12)}
 .tile.ship{background:linear-gradient(180deg,#2f3840,#142028); color:#fff; box-shadow:inset 0 6px 14px rgba(0,0,0,0.35)}
-.tile.hit{background:linear-gradient(180deg,#ff6b6b,#c43a3a); color:white; box-shadow:0 10px 30px rgba(196,58,58,0.18)}
-.tile.miss{background:linear-gradient(180deg,#f0fbff,#cfeeff)}
-.tile.sunk{background:linear-gradient(180deg,#472028,#2b1111); color:#fff; box-shadow:0 12px 36px rgba(60,10,10,0.26)}
+.tile.hit{background:linear-gradient(180deg,#ff5252,#c43a3a); color:white; box-shadow:0 10px 30px rgba(196,58,58,0.18)}
+.tile.miss{background:linear-gradient(180deg,#eaf8ff,#cfeeff)}
+/* sunk => duidelijk zwart */
+.tile.sunk{background:linear-gradient(180deg,#000000,#1b1b1b); color:#fff; box-shadow:0 12px 36px rgba(0,0,0,0.6)}
 .ship-list{margin-top:12px;display:flex;gap:8px;flex-wrap:wrap}
 .ship-pill{padding:8px 12px;border-radius:12px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.03);color:var(--card);cursor:pointer}
 .ship-pill.active{outline:3px solid rgba(19,133,255,0.12);box-shadow:0 6px 18px rgba(9,132,255,0.06)}
