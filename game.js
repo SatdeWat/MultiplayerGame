@@ -1,4 +1,33 @@
-// game.js
+// game.js (toevoeging bovenaan)
+export function initGame({size:sz, mode:m}) {
+  window.gameMode = m || "classic";
+  window.boardSize = sz || 10;
+  startGame();
+}
+
+// alles uit oude init() functie wordt in startGame() gezet
+function startGame(){
+  const size = window.boardSize;
+  createGrid(boardMeEl,size);
+  createGrid(boardOpEl,size);
+  for(let r=0;r<size;r++) for(let c=0;c<size;c++){ myBoard[cellName(r,c)]="empty"; oppBoard[cellName(r,c)]="empty"; }
+  renderBoards();
+  renderShipList();
+
+  boardMeEl.addEventListener("click",e=>{
+    if(e.target.classList.contains("tile")) placeShipAt(e.target.dataset.cell);
+  });
+  btnRotate.onclick=()=>{ orientation=orientation==="H"?"V":"H"; showPopup("Orientation "+orientation); };
+  btnRandom.onclick=randomPlaceAll;
+  btnReady.onclick=saveBoard;
+
+  // eventueel per mode
+  if(window.gameMode==="streak"){ /* logica om door te blijven schieten bij hit */ }
+  if(window.gameMode==="power"){ /* 15x15 board, evt extra features */ }
+
+  showPopup("Mode: "+window.gameMode);
+}
+
 import { db } from "./firebase-config.js";
 import { ref, set, get, onValue, runTransaction, push } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
 import { loadLocalProfile, showPopup } from "./login.js";
