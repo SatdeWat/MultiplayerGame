@@ -1,72 +1,98 @@
-<!doctype html> <!-- HTML5 document -->
-<html lang="nl"> <!-- taal NL -->
+<!doctype html>
+<html lang="nl">
 <head>
-  <meta charset="utf-8"> <!-- tekenset -->
-  <meta name="viewport" content="width=device-width,initial-scale=1"> <!-- mobiel vriendelijk -->
-  <title>Zeeslag — Login</title> <!-- titel -->
-  <link rel="stylesheet" href="styles.css"> <!-- laad styles -->
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Zeeslag — Multiplayer</title>
+  <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <main class="wrap"> <!-- centrale container -->
-    <section class="card auth-card"> <!-- login kaart -->
-      <h2>Zeeslag — Inloggen / Registreren</h2> <!-- kop -->
-      <p class="muted">Maak account met username + pincode (4–8) of speel als gast.</p> <!-- uitleg -->
+  <main class="wrap">
+    <header class="topbar">
+      <h1>Zeeslag — Multiplayer</h1>
+      <p class="subtitle">Realtime zeeslag met lobby-codes en animaties</p>
+    </header>
 
-      <div id="msg" style="display:none;color:#ffb3b3;margin-bottom:8px;"></div> <!-- plek voor meldingen -->
+    <!-- AUTH AREA -->
+    <section class="card" id="auth-area">
+      <h2>Inloggen of registreren</h2>
 
-      <div class="form-row"> <!-- username veld -->
-        <label for="login-username">Gebruikersnaam</label> <!-- label -->
-        <input id="login-username" type="text" placeholder="Naam"> <!-- input -->
+      <div class="auth-columns">
+        <div>
+          <h3>Registreren</h3>
+          <label>Username <input id="reg-username" placeholder="gebruikersnaam"></label>
+          <label>Pincode (4-8 tekens) <input id="reg-pincode" placeholder="pincode" type="password"></label>
+          <div class="row"><button id="btn-register">Registreren</button></div>
+        </div>
+
+        <div>
+          <h3>Inloggen</h3>
+          <label>Username <input id="login-username" placeholder="gebruikersnaam"></label>
+          <label>Pincode <input id="login-pincode" placeholder="pincode" type="password"></label>
+          <div class="row"><button id="btn-login">Inloggen</button></div>
+        </div>
+
+        <div>
+          <h3>Of</h3>
+          <div class="row"><button id="btn-guest-login">Speel als gast</button></div>
+          <p class="muted">Gasten verschijnen niet in leaderboard en hun voortgang blijft lokaal.</p>
+        </div>
       </div>
-
-      <div class="form-row"> <!-- pin veld -->
-        <label for="login-pin">Pincode (4-8)</label> <!-- label -->
-        <input id="login-pin" type="password" placeholder="1234"> <!-- input -->
-      </div>
-
-      <div style="display:flex;gap:8px;flex-wrap:wrap;"> <!-- knoppen -->
-        <button id="btn-login">Inloggen</button> <!-- login -->
-        <button id="btn-register" class="ghost">Registreren</button> <!-- register -->
-        <button id="btn-guest" class="ghost">Speel als gast</button> <!-- gast -->
-      </div>
-
-      <p class="muted" style="margin-top:10px">Als je al ingelogd bent wordt je direct doorgestuurd.</p> <!-- hint -->
+      <div id="auth-message" class="auth-message muted"></div>
     </section>
+
+    <!-- APP MENU (verschijnt NA inloggen) -->
+    <section id="app-menu" class="card hidden">
+      <h2>Menu</h2>
+      <div class="row" style="align-items:center;">
+        <div>Ingelogd als: <strong id="menu-username"></strong></div>
+        <div style="margin-left:auto">
+          <button id="btn-open-leaderboard">Leaderboard</button>
+          <button id="btn-open-lobby">Lobby</button>
+          <button id="btn-logout">Logout</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- LOBBY & CREATE -->
+    <section id="lobby-card" class="card hidden">
+      <h2>Lobby</h2>
+      <div class="row">
+        <label>Game mode:
+          <select id="gamemode">
+            <option value="5">5 × 5</option>
+            <option value="10" selected>10 × 10</option>
+            <option value="15">15 × 15</option>
+          </select>
+        </label>
+        <button id="create-lobby">Maak lobby</button>
+      </div>
+
+      <div class="or">of join</div>
+
+      <div class="row">
+        <input id="join-code" placeholder="Lobby code (bv. ABC123)" />
+        <button id="join-lobby">Join lobby</button>
+      </div>
+
+      <div id="my-lobby" class="hidden notice">
+        <p>Lobby code: <strong id="lobby-code"></strong></p>
+        <p>Status: <span id="lobby-status">-</span></p>
+        <button id="go-to-game" class="hidden">Ga naar spel</button>
+      </div>
+    </section>
+
+    <!-- LEADERBOARD -->
+    <section id="leaderboard-card" class="card hidden">
+      <h2>Leaderboard</h2>
+      <div id="leaderboard-table" class="leaderboard"></div>
+      <div class="row"><button id="btn-back-to-menu">Terug</button></div>
+    </section>
+
   </main>
 
-  <div id="short-popup"></div> <!-- korte popup element (3s meldingen) -->
-
-  <script type="module">
-    // index.html script: regelt inloggen/registratie/gast en redirect naar home.html
-    import { tryLogin, tryRegister, playAsGuest, loadLocalProfile } from './app-auth.js'; // import auth helpers
-
-    const $ = id => document.getElementById(id); // helper
-    const msg = $('msg'); // melding element
-
-    function showMsg(text, color='red'){ msg.style.display = 'block'; msg.style.color = color; msg.textContent = text; setTimeout(()=> msg.style.display='none', 3000); } // korte melding
-
-    document.addEventListener('DOMContentLoaded', ()=>{ // start als DOM geladen
-      const profile = loadLocalProfile(); // check lokaal profiel
-      if (profile && profile.uid){ location.href = 'home.html'; return; } // redirect als ingelogd
-
-      $('btn-login').addEventListener('click', async ()=>{ // login klik
-        const username = $('login-username').value.trim(); // naam
-        const pin = $('login-pin').value.trim(); // pin
-        if (!username || !pin) return showMsg('Vul gebruikersnaam en pincode in'); // check
-        const res = await tryLogin(username, pin); // probeer login
-        if (res.success){ showMsg('Ingelogd...', 'green'); setTimeout(()=> location.href='home.html', 700); } else showMsg(res.message || 'Login mislukt'); // feedback
-      });
-
-      $('btn-register').addEventListener('click', async ()=>{ // register klik
-        const username = $('login-username').value.trim(); const pin = $('login-pin').value.trim();
-        if (!username || !pin) return showMsg('Vul gebruikersnaam en pincode in');
-        const res = await tryRegister(username, pin); if (res.success){ showMsg('Geregistreerd!', 'green'); setTimeout(()=> location.href='home.html', 700); } else showMsg(res.message || 'Registratie mislukt');
-      });
-
-      $('btn-guest').addEventListener('click', async ()=>{ // gast klik
-        await playAsGuest(); showMsg('Je speelt als gast', 'green'); setTimeout(()=> location.href='home.html', 700);
-      });
-    });
-  </script>
+  <script type="module" src="firebase-config.js"></script>
+  <script type="module" src="app-auth.js"></script>
+  <script type="module" src="lobby.js"></script>
 </body>
 </html>
