@@ -1,107 +1,116 @@
 <!doctype html>
 <html lang="nl">
 <head>
-<meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Zeeslag — Home</title>
-<link rel="stylesheet" href="styles.css">
+  <meta charset="utf-8"> <!-- tekens -->
+  <meta name="viewport" content="width=device-width,initial-scale=1"> <!-- mobiel -->
+  <title>Zeeslag — Home</title> <!-- titel -->
+  <link rel="stylesheet" href="styles.css"> <!-- styles -->
 </head>
 <body>
-<main class="wrap">
-  <div class="topbar">
-    <div><h1>Zeeslag</h1><div class="muted">Kies wat je wilt doen</div></div>
-    <div id="profile-info" class="muted"></div>
-  </div>
-
-  <section class="card">
-    <div style="display:flex;justify-content:space-between;align-items:center">
+  <main class="wrap">
+    <div class="topbar">
       <div>
-        <h3 id="profile-username">—</h3>
-        <div id="profile-uid" class="muted"></div>
+        <h1>Zeeslag</h1> <!-- titel -->
+        <div class="muted">Kies wat je wilt doen</div> <!-- subtitel -->
       </div>
-      <div style="display:flex;gap:8px">
-        <button id="btn-join-lobby">Join Lobby</button>
-        <button id="btn-gamemodes">Gamemodes</button>
-        <button id="btn-leaderboard">Leaderboard</button>
-        <button id="btn-tutorial">How to play</button>
-        <button id="btn-logout" class="ghost">Logout</button>
-      </div>
+      <div id="profile-info" class="muted"></div> <!-- hier tonen we username -->
     </div>
-  </section>
 
-  <section class="card hidden" id="gamemode-list">
-    <h3>Gamemodes (maak lobby)</h3>
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px">
-      <div>
-        <h4>Classic</h4>
-        <div class="muted">Kies 10×10 / 15×15 / 20×20. Schepen: 10→3, 15→4, 20→6.</div>
-        <div class="row" style="margin-top:8px">
-          <select id="gm-classic-size">
-            <option value="10">10×10 — 3 schepen</option>
-            <option value="15" selected>15×15 — 4 schepen</option>
-            <option value="20">20×20 — 6 schepen</option>
-          </select>
-          <button id="btn-classic-create">Create</button>
+    <section class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <div>
+          <h3 id="profile-username">—</h3> <!-- username -->
+          <div id="profile-uid" class="muted"></div> <!-- uid -->
+        </div>
+        <div style="display:flex;gap:8px;">
+          <button id="btn-join-lobby">Join Lobby</button> <!-- ga naar join scherm -->
+          <button id="btn-gamemodes">Maak lobby (Gamemodes)</button> <!-- toon gamemode keuzes -->
+          <button id="btn-leaderboard">Leaderboard</button> <!-- leaderboard -->
+          <button id="btn-logout" class="ghost">Logout</button> <!-- logout -->
+        </div>
+      </div>
+    </section>
+
+    <section class="card hidden" id="gamemode-list" style="margin-top:12px;">
+      <h3>Gamemodes (maak lobby)</h3> <!-- gamemode lijst -->
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;">
+        <div>
+          <h4>Classic</h4>
+          <div class="muted">10×10 / 15×15 / 20×20. Schepen: 10→3, 15→4, 20→6.</div>
+          <div style="margin-top:8px;display:flex;gap:8px;align-items:center;">
+            <select id="gm-classic-size">
+              <option value="10">10×10 — 3 schepen</option>
+              <option value="15" selected>15×15 — 4 schepen</option>
+              <option value="20">20×20 — 6 schepen</option>
+            </select>
+            <button id="btn-classic-create" data-create-lobby="classic">Create</button>
+          </div>
+        </div>
+
+        <div>
+          <h4>Power</h4>
+          <div class="muted">20×20. Sink ship → +1 powershot (3×3).</div>
+          <div style="margin-top:8px;"><button id="btn-power-create" data-create-lobby="power">Create Power (20×20)</button></div>
+        </div>
+
+        <div>
+          <h4>Streak</h4>
+          <div class="muted">Hit → nog een beurt. Kies 10/15/20.</div>
+          <div style="margin-top:8px;display:flex;gap:8px;align-items:center;">
+            <select id="gm-streak-size">
+              <option value="10">10×10 — 3 schepen</option>
+              <option value="15" selected>15×15 — 4 schepen</option>
+              <option value="20">20×20 — 6 schepen</option>
+            </select>
+            <button id="btn-streak-create" data-create-lobby="streak">Create</button>
+          </div>
         </div>
       </div>
 
-      <div>
-        <h4>Power</h4>
-        <div class="muted">20×20. Sink ship → +1 powershot (3×3).</div>
-        <div style="margin-top:8px"><button id="btn-power-create">Create Power (20×20)</button></div>
-      </div>
+      <div style="margin-top:12px;"><button id="btn-back-menu" class="ghost">Back</button></div>
+    </section>
+  </main>
 
-      <div>
-        <h4>Streak</h4>
-        <div class="muted">Hit → nog een beurt. Kies 10/15/20 — scheepstallen zoals hierboven.</div>
-        <div class="row" style="margin-top:8px">
-          <select id="gm-streak-size">
-            <option value="10">10×10 — 3 schepen</option>
-            <option value="15" selected>15×15 — 4 schepen</option>
-            <option value="20">20×20 — 6 schepen</option>
-          </select>
-          <button id="btn-streak-create">Create</button>
-        </div>
-      </div>
-      
-</main>
+  <div id="app-toast"></div> <!-- toast element -->
 
 <script type="module">
-import { loadLocalProfile } from "./app-auth.js";
-import { db } from "./firebase-config.js";
-import { ref, set } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
+  // home.html script: toont profiel, maakt lobbies
+  import { loadLocalProfile } from "./app-auth.js"; // import local profile helper
+  import { db } from "./firebase-config.js"; // db
+  import { ref, set } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js"; // db functions
 
-const $ = id => document.getElementById(id);
-document.addEventListener('DOMContentLoaded', ()=>{
-  const profile = loadLocalProfile();
-  if (!profile) { location.href='index.html'; return; }
-  $('profile-username').textContent = profile.username + (profile.guest ? ' (Gast)':'');
-  $('profile-uid').textContent = profile.uid;
+  const $ = id => document.getElementById(id); // helper
+  document.addEventListener('DOMContentLoaded', ()=>{ // start na load
+    const profile = loadLocalProfile(); // laadt lokaal profiel
+    if (!profile) { location.href='index.html'; return; } // redirect als niet ingelogd
+    $('profile-username').textContent = profile.username + (profile.guest ? ' (Gast)':''); // toon naam
+    $('profile-uid').textContent = profile.uid; // toon uid
 
-  $('btn-logout').addEventListener('click', ()=> { localStorage.removeItem('zs_profile_v2'); location.href='index.html'; });
-  $('btn-join-lobby').addEventListener('click', ()=> location.href='lobby.html');
-  $('btn-leaderboard').addEventListener('click', ()=> location.href='leaderboard.html');
-  $('btn-gamemodes').addEventListener('click', ()=> $('gamemode-list').classList.toggle('hidden'));
-  $('btn-back-menu').addEventListener('click', ()=> $('gamemode-list').classList.add('hidden'));
+    $('btn-logout').addEventListener('click', ()=> { localStorage.removeItem('zs_profile_v2'); location.href='index.html'; }); // logout
 
-  function makeCode(len=6){ const chars="ABCDEFGHJKMNPQRSTUVWXYZ23456789"; let s=""; for(let i=0;i<len;i++) s+=chars[Math.floor(Math.random()*chars.length)]; return s; }
+    $('btn-join-lobby').addEventListener('click', ()=> location.href='lobby.html'); // ga naar lobby (join)
+    $('btn-leaderboard').addEventListener('click', ()=> location.href='leaderboard.html'); // ga naar leaderboard
 
-  async function createLobby(gamemode,size){
-    const uid = profile.uid;
-    const code = makeCode(6);
-    const gameId = `game_${Date.now()}_${Math.floor(Math.random()*9999)}`;
-    const players = {}; players[uid] = { username: profile.username, ready:false, slot:0 };
-    // default ship sets will be applied in game_core based on size
-    await set(ref(db, `lobbies/${code}`), { gameId, owner: uid, gamemode, size });
-    await set(ref(db, `games/${gameId}`), { players, status: "waiting", gamemode, size, createdAt: Date.now() });
-    location.href = `lobby.html?code=${code}`;
-  }
+    $('btn-gamemodes').addEventListener('click', ()=> $('gamemode-list').classList.toggle('hidden')); // toggle gamemode lijst
+    $('btn-back-menu').addEventListener('click', ()=> $('gamemode-list').classList.add('hidden')); // verberg lijst
 
-  $('btn-classic-create').addEventListener('click', ()=> createLobby('classic', parseInt($('gm-classic-size').value,10)));
-  $('btn-power-create').addEventListener('click', ()=> createLobby('power', 20));
-  $('btn-streak-create').addEventListener('click', ()=> createLobby('streak', parseInt($('gm-streak-size').value,10)));
-  $('btn-salvo-create').addEventListener('click', ()=> createLobby('salvo', 15));
-});
+    // simpele code maker
+    function makeCode(len=6){ const chars="ABCDEFGHJKMNPQRSTUVWXYZ23456789"; let s=""; for(let i=0;i<len;i++) s+=chars[Math.floor(Math.random()*chars.length)]; return s; }
+
+    async function createLobby(gamemode,size){
+      const uid = profile.uid; // jouw uid
+      const code = makeCode(6); // lobby code
+      const gameId = `game_${Date.now()}_${Math.floor(Math.random()*9999)}`; // uniek game id
+      const players = {}; players[uid] = { username: profile.username, ready:false, slot:0, power:0 }; // init players
+      await set(ref(db, `lobbies/${code}`), { gameId, owner: uid, gamemode, size }); // schrijf lobby
+      await set(ref(db, `games/${gameId}`), { players, status: "waiting", gamemode, size, createdAt: Date.now() }); // schrijf game
+      location.href = `lobby.html?code=${code}`; // ga naar lobby pagina
+    }
+
+    $('btn-classic-create').addEventListener('click', ()=> createLobby('classic', parseInt($('gm-classic-size').value,10))); // create classic
+    $('btn-power-create').addEventListener('click', ()=> createLobby('power', 20)); // create power
+    $('btn-streak-create').addEventListener('click', ()=> createLobby('streak', parseInt($('gm-streak-size').value,10))); // create streak
+  });
 </script>
 </body>
 </html>
