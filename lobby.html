@@ -1,54 +1,27 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="nl">
 <head>
-  <meta charset="utf-8"> <!-- tekens -->
-  <meta name="viewport" content="width=device-width,initial-scale=1"> <!-- mobiel -->
-  <title>Lobby — Zeeslag</title> <!-- titel -->
-  <link rel="stylesheet" href="styles.css"> <!-- styles -->
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Lobby - Zeeslag</title>
+<link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <main class="wrap">
-    <div class="topbar">
-      <div><h1>Lobby</h1><div class="muted">Wacht op tegenstander</div></div> <!-- header -->
-      <div id="profile-info" class="muted"></div> <!-- profile info -->
-    </div>
-
-    <section class="card">
-      <h3>Lobby code: <span id="lobby-code-display">—</span> <button id="btn-copy-lobby">Copy</button></h3> <!-- code weergave -->
-      <div id="lobby-players" style="margin-top:8px"></div> <!-- spelerslijst -->
-      <div style="margin-top:12px;display:flex;gap:8px;">
-        <button id="btn-leave-lobby" class="ghost">Leave lobby</button> <!-- leave -->
-        <button id="start-game-btn">Force start (host)</button> <!-- host kan forceren -->
-      </div>
-
-      <hr style="margin:12px 0;">
-
-      <div style="display:flex;gap:12px;">
-        <div style="flex:1;">
-          <h4>Je bord</h4> <!-- eigen bord -->
-          <div id="board-me" class="board"></div> <!-- grid -->
-          <div style="margin-top:8px;display:flex;gap:8px;">
-            <button id="btn-random-place">Random</button> <!-- random plaatsen -->
-            <button id="btn-rotate">Rotate (H)</button> <!-- rotatie -->
-            <button id="btn-ready">Klaar</button> <!-- klaar -->
-          </div>
-          <div id="ship-list" class="ship-list" style="margin-top:8px"></div> <!-- schepen -->
-          <div id="ready-badge-me" class="muted" style="margin-top:6px"></div> <!-- klaar badge -->
-        </div>
-
-        <div style="flex:1;">
-          <h4>Vijand</h4>
-          <div id="board-op" class="board"></div> <!-- vijand board -->
-          <div id="ready-badge-op" class="muted" style="margin-top:8px"></div> <!-- klaar badge tegenstander -->
-        </div>
-      </div>
-
-      <div id="log" class="log" style="margin-top:10px;"></div> <!-- korte log -->
-    </section>
-  </main>
-
-  <div id="short-popup"></div> <!-- korte popups -->
-
-  <script type="module" src="lobby.js"></script> <!-- lobby logic -->
+<h1>Lobby</h1>
+<select id="gamemode">
+  <option value="10">Classic 10x10</option>
+  <option value="15">Power 15x15</option>
+</select>
+<div>
+  <button id="create-lobby">Maak Lobby</button>
+  <input type="text" id="join-code" placeholder="Code invullen">
+  <button id="join-lobby">Join Lobby</button>
+</div>
+<div id="my-lobby" class="hidden">
+  <p>Lobby code: <span id="lobby-code"></span></p>
+  <p id="lobby-status"></p>
+  <button id="go-to-game" class="hidden">Start Game</button>
+</div>
+<script type="module" src="lobby.js"></script>
 </body>
 </html>
