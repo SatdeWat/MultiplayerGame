@@ -1,11 +1,8 @@
 // firebase-config.js
-// Initialiseert Firebase Realtime Database en exporteert 'db'.
-// VERVANG MET JE EIGEN CONFIG ALS JE WIL
-
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
 import { getDatabase } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
 
-/* --- JE CONFIG HIER --- */
+/* VERVANG DIT MET JE EIGEN CONFIG */
 const firebaseConfig = {
   apiKey: "AIzaSyCdI588pB7GMPJcjDJTHLAWjOmADixFnvw",
   authDomain: "zeeslag-game.firebaseapp.com",
