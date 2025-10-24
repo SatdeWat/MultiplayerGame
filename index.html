@@ -1,98 +1,20 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="nl">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Zeeslag — Multiplayer</title>
-  <link rel="stylesheet" href="styles.css">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Zeeslag</title>
+<link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <main class="wrap">
-    <header class="topbar">
-      <h1>Zeeslag — Multiplayer</h1>
-      <p class="subtitle">Realtime zeeslag met lobby-codes en animaties</p>
-    </header>
-
-    <!-- AUTH AREA -->
-    <section class="card" id="auth-area">
-      <h2>Inloggen of registreren</h2>
-
-      <div class="auth-columns">
-        <div>
-          <h3>Registreren</h3>
-          <label>Username <input id="reg-username" placeholder="gebruikersnaam"></label>
-          <label>Pincode (4-8 tekens) <input id="reg-pincode" placeholder="pincode" type="password"></label>
-          <div class="row"><button id="btn-register">Registreren</button></div>
-        </div>
-
-        <div>
-          <h3>Inloggen</h3>
-          <label>Username <input id="login-username" placeholder="gebruikersnaam"></label>
-          <label>Pincode <input id="login-pincode" placeholder="pincode" type="password"></label>
-          <div class="row"><button id="btn-login">Inloggen</button></div>
-        </div>
-
-        <div>
-          <h3>Of</h3>
-          <div class="row"><button id="btn-guest-login">Speel als gast</button></div>
-          <p class="muted">Gasten verschijnen niet in leaderboard en hun voortgang blijft lokaal.</p>
-        </div>
-      </div>
-      <div id="auth-message" class="auth-message muted"></div>
-    </section>
-
-    <!-- APP MENU (verschijnt NA inloggen) -->
-    <section id="app-menu" class="card hidden">
-      <h2>Menu</h2>
-      <div class="row" style="align-items:center;">
-        <div>Ingelogd als: <strong id="menu-username"></strong></div>
-        <div style="margin-left:auto">
-          <button id="btn-open-leaderboard">Leaderboard</button>
-          <button id="btn-open-lobby">Lobby</button>
-          <button id="btn-logout">Logout</button>
-        </div>
-      </div>
-    </section>
-
-    <!-- LOBBY & CREATE -->
-    <section id="lobby-card" class="card hidden">
-      <h2>Lobby</h2>
-      <div class="row">
-        <label>Game mode:
-          <select id="gamemode">
-            <option value="5">5 × 5</option>
-            <option value="10" selected>10 × 10</option>
-            <option value="15">15 × 15</option>
-          </select>
-        </label>
-        <button id="create-lobby">Maak lobby</button>
-      </div>
-
-      <div class="or">of join</div>
-
-      <div class="row">
-        <input id="join-code" placeholder="Lobby code (bv. ABC123)" />
-        <button id="join-lobby">Join lobby</button>
-      </div>
-
-      <div id="my-lobby" class="hidden notice">
-        <p>Lobby code: <strong id="lobby-code"></strong></p>
-        <p>Status: <span id="lobby-status">-</span></p>
-        <button id="go-to-game" class="hidden">Ga naar spel</button>
-      </div>
-    </section>
-
-    <!-- LEADERBOARD -->
-    <section id="leaderboard-card" class="card hidden">
-      <h2>Leaderboard</h2>
-      <div id="leaderboard-table" class="leaderboard"></div>
-      <div class="row"><button id="btn-back-to-menu">Terug</button></div>
-    </section>
-
-  </main>
-
-  <script type="module" src="firebase-config.js"></script>
-  <script type="module" src="app-auth.js"></script>
-  <script type="module" src="lobby.js"></script>
+<div class="login-container">
+  <h1>Zeeslag Online</h1>
+  <input type="text" id="username" placeholder="Username">
+  <input type="password" id="pincode" placeholder="Pincode">
+  <button id="btn-register">Registreren</button>
+  <button id="btn-login">Inloggen</button>
+  <button id="btn-guest">Gast</button>
+</div>
+<script type="module" src="login.js"></script>
 </body>
 </html>
