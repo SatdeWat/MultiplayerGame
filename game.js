@@ -1,275 +1,478 @@
-// game.js — regelt lobby, ready, autostart en rematch flows
-import { db } from "./firebase-config.js"; // haal db verbinding
-import { loadLocalProfile, ensureUserProfileOnDb } from "./app-auth.js"; // eenvoudige auth helpers
-import { ref, get, set, onValue, runTransaction, update, push, onChildAdded } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js"; // DB functies
+// game.js
+import { db } from "./firebase-config.js";
+import { loadLocalProfile } from "./app-auth.js";
+import {
+  ref, get, set, onValue, push, runTransaction
+} from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
 
-// korte helpers
-const $ = id => document.getElementById(id); // shortcut om element met id te pakken
-const alpha = n => String.fromCharCode(65 + n); // 0->A, 1->B etc.
-const cellName = (r,c) => `${alpha(r)}${c+1}`; // maak celnaam zoals "A1"
-const makeCode = (len=6) => { const chars="ABCDEFGHJKMNPQRSTUVWXYZ23456789"; let s=""; for(let i=0;i<len;i++) s+=chars[Math.floor(Math.random()*chars.length)]; return s; }; // makkelijke lobbycode-maker
-const pageForMode = gm => gm === 'power' ? 'game_power.html' : gm === 'streak' ? 'game_streak.html' : gm === 'salvo' ? 'game_salvo.html' : 'game_classic.html'; // kies gamepagina op basis van mode
+const qs = new URLSearchParams(location.search);
+const lobbyCode = qs.get("lobby");
+const profile = loadLocalProfile() || { username:"Gast", id:`guest${Math.floor(Math.random()*9999)}` };
 
-function showToast(msg, t=1800){ // klein berichtje onderin
-  let el = document.getElementById('app-toast'); // zoek toast element
-  if (!el){
-    el = document.createElement('div'); el.id='app-toast'; el.className='card'; // maak element als 't nog niet bestaat
-    el.style.position='fixed'; el.style.right='18px'; el.style.bottom='18px'; el.style.zIndex=99999; // stijl
-    document.body.appendChild(el); // voeg toe aan pagina
+const $ = id => document.getElementById(id);
+const boardMeEl = $("board-me"), boardOpEl = $("board-op");
+const infoLobby = $("info-lobby"), infoPlayer = $("info-player"), infoTurn = $("info-turn");
+const btnRandom = $("btn-random"), btnReady = $("btn-ready"), btnRotate = $("btn-rotate");
+const cannonArea = $("cannon-area"), logEl = $("log"), headerSub = $("header-sub");
+
+const modal = createModalElements();
+
+let gameId = null;
+let size = 10;
+let myId = profile.id;
+let myBoard = {}, oppBoard = {}; // cell states
+let placing = true;
+let orientation = "H";
+let shipSizes = [5,4,3,3,2];
+let currentShipIndex = 0;
+let shipsMeta = []; // array of arrays (cells) for our ships
+
+// image URLs
+const CANNON_URL = "https://cdn-icons-png.flaticon.com/512/3369/3369660.png";
+const SHOT_URL = "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRsonFTFUeLaut_val1poYgUuCph8s9N2FJBg&s";
+
+/* helpers */
+function log(msg){ const d = document.createElement("div"); d.textContent = `${new Date().toLocaleTimeString()} — ${msg}`; logEl.prepend(d); }
+function alpha(n){ return String.fromCharCode(65 + n); }
+function cellName(r,c){ return `${alpha(r)}${c+1}`; }
+
+function createGrid(el, n){
+  el.innerHTML = "";
+  el.classList.remove("cell-5","cell-10","cell-15");
+  el.classList.add(`cell-${n}`);
+  el.style.gridTemplateRows = `repeat(${n},1fr)`;
+  for (let r=0;r<n;r++){
+    for (let c=0;c<n;c++){
+      const tile = document.createElement("div");
+      tile.className = "tile sea";
+      tile.dataset.r = r; tile.dataset.c = c; tile.dataset.cell = cellName(r,c);
+      el.appendChild(tile);
+    }
   }
-  el.textContent = msg; el.style.display='block'; // zet tekst en toon
-  setTimeout(()=> el.style.display='none', t); // verberg na t ms
 }
 
-function showOverlay(html){ // simpele overlay box in het midden
-  let o = document.querySelector('.overlay'); // check of overlay al bestaat
-  if (!o){
-    o = document.createElement('div'); o.className='overlay'; // maak overlay
-    o.innerHTML = `<div class="overlay-inner"><div id="overlay-inner-content">${html}</div><div style="margin-top:12px"><button id="overlay-ok">OK</button></div></div>`; // inhoud + knop
-    document.body.appendChild(o); // voeg toe
-    document.getElementById('overlay-ok').addEventListener('click', ()=> o.classList.add('hidden')); // OK knop verbergt overlay
-  } else {
-    o.classList.remove('hidden'); document.getElementById('overlay-inner-content').innerHTML = html; // toon en zet tekst
-  }
+function setSize(n){
+  size = n;
+  createGrid(boardMeEl, n);
+  createGrid(boardOpEl, n);
+  myBoard = {}; oppBoard = {};
+  for (let r=0;r<size;r++) for (let c=0;c<size;c++) myBoard[cellName(r,c)] = "empty";
+  if (n>=15) shipSizes = [5,4,4,3,3,2];
+  else if (n>=10) shipSizes = [5,4,3,3,2];
+  else shipSizes = [3,2,2];
+  // reset shipsMeta
+  shipsMeta = shipSizes.map(s => s>0 ? null : null);
+  renderShipList();
+  renderBoards();
 }
 
-// Debounce voor rendering (voorkomt te vaak updaten)
-function debounce(fn, wait=80){ let t=null; return (...args)=>{ if(t) clearTimeout(t); t=setTimeout(()=> { t=null; fn(...args); }, wait); }; }
-
-// === Lobby placement + ready behaviour ===
-async function initLobbyBehavior(){ // functie die we aanroept op lobby pagina
-  const path = location.pathname.split('/').pop(); // huidige bestandsnaam
-  if (path !== 'lobby.html') return; // als we niet op lobby.html zitten: stop
-
-  const qs = new URLSearchParams(location.search); // lees ?code=...
-  const code = qs.get('code') || qs.get('lobby'); // mogelijke querynamen
-  if (!code){ showOverlay('Geen lobby-code opgegeven.'); return; } // foutmelding als geen code
-
-  const profile = loadLocalProfile(); // laad lokaal opgeslagen profiel
-  if (!profile){ showOverlay('Je moet inloggen of als gast spelen.'); return; } // als niet ingelogd => overlay en stop
-  await ensureUserProfileOnDb(profile.uid, profile).catch(()=>{}); // maak profiel in DB als dat nog niet bestaat
-
-  const lobbyRef = ref(db, `lobbies/${code}`); // referentie naar lobbies/{code}
-  const codeDisplay = $('lobby-code-display'); if (codeDisplay) codeDisplay.textContent = code; // toon code
-  const copyBtn = $('btn-copy-lobby'); if (copyBtn) copyBtn.onclick = ()=> navigator.clipboard?.writeText(code).then(()=> showToast('Lobby code gekopieerd')); // copy knop
-  const leaveBtn = $('btn-leave-lobby'); if (leaveBtn) leaveBtn.onclick = async ()=>{ // leave knop
-    const lobbySnap = await get(lobbyRef); if (!lobbySnap.exists()){ location.href='home.html'; return; } // als lobby weg redirect home
-    const gameIdLocal = lobbySnap.val().gameId; if (gameIdLocal) await set(ref(db, `games/${gameIdLocal}/players/${profile.uid}`), null); // verwijder jezelf uit players
-    location.href='home.html'; // ga naar home
-  };
-
-  // UI elementen
-  const boardMe = $('board-me'); // waar je je eigen board ziet
-  const btnRandomPlace = $('btn-random-place'); // random place knop
-  const btnRotate = $('btn-rotate'); // rotate knop
-  const btnReady = $('btn-ready'); // klaar knop
-  const shipsListEl = $('ship-list'); // lijst met schepen
-  const readyBadgeMe = $('ready-badge-me'); // tekst 'klaar' bij jezelf
-  const readyBadgeOp = $('ready-badge-op'); // tekst 'klaar' bij tegenstander
-
-  // lokale plaatsingsstaat
-  let gameId = null; // word later gezet als we lobby lezen
-  let size = 15; // standaard 15x15
-  let shipSizes = [5,4,3,2]; // default schepen voor 15x15
-  let orientation = 'H'; // H of V
-  let myBoardLocal = {}; // lokaal board data (voor plaatsing)
-  let myShipsLocal = []; // lokale schepen array
-  let currentShipIndex = 0; // welke ship je nu plaatst
-
-  // kleine render functie die snel updates plakt naar DOM (debounced)
-  const renderBoards = debounce(()=>{
-    if (!boardMe) return; // geen board aanwezig → niks doen
-    Array.from(boardMe.children).forEach(tile=>{
-      const id = tile.dataset.cell; // cell name zoals A1
-      tile.className = 'tile sea'; // reset classes
-      tile.innerHTML = ''; // reset inhoud
-      const st = myBoardLocal[id] || 'empty'; // status uit local board
-      if (st === 'ship') tile.classList.add('ship'); // laat eigen schip zien
-      if (st === 'hit'){ tile.classList.add('hit'); tile.innerHTML='🔥'; } // hit emoji
-      if (st === 'miss'){ tile.classList.add('miss'); tile.innerHTML='🌊'; } // miss emoji
-      if (st === 'sunk'){ tile.classList.add('sunk'); tile.innerHTML='☠️'; } // sunk emoji
-    });
-  }, 40);
-
-  // maak grid in DOM op basis van size
-  function createGrid(el,n){
-    if (!el) return; // als element niet bestaat, stop
-    el.innerHTML = ''; el.classList.remove('cell-10','cell-15','cell-20'); // reset classes
-    el.classList.add(`cell-${n}`); el.style.gridTemplateRows = `repeat(${n},1fr)`; // grid CSS
-    for (let r=0;r<n;r++) for (let c=0;c<n;c++){
-      const cell = document.createElement('div'); cell.className='tile sea'; cell.dataset.r=r; cell.dataset.c=c; cell.dataset.cell = cellName(r,c); // maak tile
-      el.appendChild(cell); // voeg toe
-    }
-  }
-
-  // zet shipSizes en initialiseer board
-  function setShipSizesForBoard(n){
-    size = n; // bewaar size
-    createGrid(boardMe, size); // maak grid
-    myBoardLocal = {}; myShipsLocal = []; currentShipIndex = 0; orientation = 'H'; // reset local data
-    if (size === 10) shipSizes = [5,4,3]; // 10x10 → 3 schepen
-    else if (size === 15) shipSizes = [5,4,3,2]; // 15x15 → 4 schepen
-    else if (size === 20) shipSizes = [5,4,4,3,3,2]; // 20x20 → 6 schepen
-    else shipSizes = [5,4,3,2]; // fallback
-    for (let r=0;r<size;r++) for (let c=0;c<size;c++) myBoardLocal[cellName(r,c)]='empty'; // zet elke cel empty
-    renderShipList(); renderBoards(); // update UI
-  }
-
-  function renderShipList(){
-    if (!shipsListEl) return; shipsListEl.innerHTML = ''; // leeg maken
-    shipSizes.forEach((s,i)=>{
-      const pill = document.createElement('div'); pill.className='ship-pill' + (i===currentShipIndex ? ' active' : ''); pill.textContent = `Ship ${i+1} — ${s>0?s:'placed'}`; // tekst
-      pill.onclick = ()=> { if (s>0) { currentShipIndex = i; renderShipList(); } }; // klik op ship selecteert deze
-      shipsListEl.appendChild(pill); // toevoegen
-    });
-  }
-
-  // check of een schip kan op (r,c) met lengte s en orientatie
-  function canPlaceLocal(r,c,s,orient){
-    const coords=[];
-    for (let i=0;i<s;i++){
-      const rr = r + (orient === 'V' ? i : 0);
-      const cc = c + (orient === 'H' ? i : 0);
-      if (rr < 0 || rr >= size || cc < 0 || cc >= size) return null; // buiten grid → niet ok
-      coords.push(cellName(rr,cc));
-    }
-    for (const k of coords) if (myBoardLocal[k] === 'ship') return null; // overlap → niet ok
-    return coords; // ok → retourneer coords array
-  }
-
-  // plaats lokaal schip op een gekozen cel
-  function placeShipLocalAtCell(cellId){
-    const r = cellId.charCodeAt(0) - 65, c = parseInt(cellId.slice(1),10)-1; // zet A1 → r=0 c=0
-    const s = shipSizes[currentShipIndex]; // lengte van huidig schip
-    if (!s || s <= 0) { showToast('Geen schip geselecteerd'); return; } // niks te plaatsen
-    const coords = canPlaceLocal(r,c,s,orientation); // kan we plaatsen?
-    if (!coords){ showToast('Kan hier niet plaatsen'); return; } // niet ok
-    coords.forEach(k => myBoardLocal[k] = 'ship'); // markeer cellen als ship
-    myShipsLocal.push({ id: 's_' + Date.now() + '_' + Math.random().toString(36).slice(2,5), cells: coords.slice(), size: s }); // voeg ship object toe
-    shipSizes[currentShipIndex] = 0; // markeer als geplaatst
-    while (currentShipIndex < shipSizes.length && shipSizes[currentShipIndex] === 0) currentShipIndex++; // schuif naar volgend ship
-    renderShipList(); renderBoards(); // update UI
-  }
-
-  // willekeurig alle schepen plaatsen
-  function randomPlaceLocalAll(){
-    for (const k in myBoardLocal) myBoardLocal[k] = 'empty'; // reset board
-    myShipsLocal = []; // clear ships
-    const sizes = shipSizes.slice(); // copy sizes
-    for (let i=0;i<sizes.length;i++){
-      const s = sizes[i];
-      let placed=false, tries=0;
-      while(!placed && tries < 5000){
-        const r = Math.floor(Math.random()*size), c = Math.floor(Math.random()*size);
-        const o = Math.random() < 0.5 ? 'H' : 'V';
-        const coords = canPlaceLocal(r,c,s,o);
-        if (coords){ coords.forEach(k => myBoardLocal[k] = 'ship'); myShipsLocal.push({id:'rs_'+Date.now()+'_'+i, cells:coords.slice(), size:s}); placed=true; }
-        tries++;
-      }
-    }
-    shipSizes = shipSizes.map(_=>0); // alle ships als geplaatst markeren
-    renderShipList(); renderBoards(); // update UI
-  }
-
-  if (btnRandomPlace) btnRandomPlace.onclick = ()=> { randomPlaceLocalAll(); showToast('Random geplaatst'); }; // random knop
-  if (btnRotate) btnRotate.onclick = ()=> { orientation = orientation === 'H' ? 'V' : 'H'; if (btnRotate) btnRotate.textContent = `Rotate (${orientation})`; }; // rotatie knop
-
-  if (boardMe) boardMe.addEventListener('click', e => { // op eigen board klikken => plaats schip
-    const t = e.target.closest('.tile'); if (!t) return;
-    placeShipLocalAtCell(t.dataset.cell); // zet ship
+function renderBoards(){
+  Array.from(boardMeEl.children).forEach(tile=>{
+    const id = tile.dataset.cell;
+    tile.className = "tile sea";
+    tile.innerHTML = "";
+    if (myBoard[id] === "ship") { tile.classList.add("ship"); }
+    if (myBoard[id] === "hit") { tile.classList.add("hit"); tile.innerHTML = "💥"; }
+    if (myBoard[id] === "miss") { tile.classList.add("miss"); tile.innerHTML = "🌊"; }
   });
+  Array.from(boardOpEl.children).forEach(tile=>{
+    const id = tile.dataset.cell;
+    tile.className = "tile sea";
+    tile.innerHTML = "";
+    if (oppBoard[id] === "hit"){ tile.classList.add("hit"); tile.innerHTML = "🔥"; }
+    if (oppBoard[id] === "miss"){ tile.classList.add("miss"); tile.innerHTML = "🌊"; }
+    if (oppBoard[id] === "sunk"){ tile.classList.add("sunk"); tile.innerHTML = "☠️"; }
+  });
+}
 
-  // Helper: verberg plaatsings-controls zodra de speler klaar klikt
-  function hidePlacementControls(){
-    if (btnRandomPlace) btnRandomPlace.style.display = 'none'; // verberg random knop
-    if (btnRotate) btnRotate.style.display = 'none'; // verberg rotate knop
-    if (btnReady) btnReady.style.display = 'none'; // verberg ready knop
-    if (shipsListEl) shipsListEl.style.display = 'none'; // verberg ship lijst
+function renderShipList(){
+  const wrap = $("ship-list");
+  wrap.innerHTML = "";
+  shipSizes.forEach((s,i)=>{
+    const pill = document.createElement("div");
+    pill.className = "ship-pill" + (i === currentShipIndex ? " active" : "");
+    pill.textContent = `Ship ${i+1} — ${s>0?s:"placed"}`;
+    pill.addEventListener("click", ()=>{ if (s>0) currentShipIndex = i; renderShipList(); });
+    wrap.appendChild(pill);
+  });
+}
+
+/* placement utils */
+function canPlace(startR,startC,sizeShip,orient){
+  let coords = [];
+  for (let i=0;i<sizeShip;i++){
+    const r = startR + (orient==="V"?i:0);
+    const c = startC + (orient==="H"?i:0);
+    if (r<0 || r>=size || c<0 || c>=size) return null;
+    coords.push(cellName(r,c));
   }
+  for (const cell of coords) if (myBoard[cell] === "ship") return null;
+  return coords;
+}
 
-  // Auto-start watcher: kijkt constant of alle spelers ready zijn *en* hun board+ships bestaan in DB
-  let playersWatcherAttached = false;
-  function attachAutoStartWatcherOnce(localGameId){
-    if (playersWatcherAttached) return; playersWatcherAttached = true;
-    const playersRef = ref(db, `games/${localGameId}/players`); // locatie players
-    onValue(playersRef, async snap => {
-      const players = snap.exists() ? snap.val() : {}; // alle spelers
-      const pids = Object.keys(players);
-      if (pids.length < 2) return; // nog geen tegenstander
-      let allOk = true;
-      for (const pid of pids){
-        const p = players[pid] || {};
-        if (!p.ready){ allOk = false; break; } // speler niet ready
-        const boardSnap = await get(ref(db, `games/${localGameId}/players/${pid}/board`)); // check board bestaat
-        const shipsSnap = await get(ref(db, `games/${localGameId}/players/${pid}/ships`)); // check ships bestaat
-        if (!boardSnap.exists() || !shipsSnap.exists()){ allOk = false; break; } // nog niet alles geschreven
-      }
-      if (allOk){
-        const gSnap = await get(ref(db, `games/${localGameId}/status`)); // status check
-        const status = gSnap.exists() ? gSnap.val() : null;
-        if (status !== 'in_progress'){ // als nog niet gestart → start
-          const starter = pids[Math.floor(Math.random()*pids.length)]; // kies willekeurige starter
-          await set(ref(db, `games/${localGameId}/status`), 'in_progress'); // zet status
-          await set(ref(db, `games/${localGameId}/turnUid`), starter); // zet wie begint
-          // Maakt salvo-initialisatie als nodig (hier vereenvoudigd)
-          showToast('Allemaal klaar — spel gestart!'); // visuele feedback
+function placeShipAt(cellId){
+  if (!placing) return;
+  const r = cellId.charCodeAt(0) - 65;
+  const c = parseInt(cellId.slice(1),10) - 1;
+  const s = shipSizes[currentShipIndex];
+  if (!s || s<=0) { log("Geen schip geselecteerd of al geplaatst."); return; }
+  const coords = canPlace(r,c,s,orientation);
+  if (!coords){ popup("Kan hier niet plaatsen.", 1500); return; }
+  coords.forEach(k => myBoard[k] = "ship");
+  shipsMeta[currentShipIndex] = coords.slice();
+  shipSizes[currentShipIndex] = 0;
+  // advance to next unplaced
+  while (currentShipIndex < shipSizes.length && shipSizes[currentShipIndex] === 0) currentShipIndex++;
+  renderShipList(); renderBoards();
+}
+
+function randomPlaceAll(){
+  for (const k in myBoard) myBoard[k] = "empty";
+  const sizes = shipSizes.map(x=>x).filter(x=>x>0);
+  shipsMeta = [];
+  for (const s of sizes){
+    let tries = 0; let placed = false;
+    while (!placed && tries < 1000){
+      const r = Math.floor(Math.random()*size), c = Math.floor(Math.random()*size);
+      const o = Math.random()<0.5 ? "H" : "V";
+      const coords = canPlace(r,c,s,o);
+      if (coords){ coords.forEach(k=> myBoard[k]="ship"); placed = true; shipsMeta.push(coords.slice()); }
+      tries++;
+    }
+  }
+  // fill shipSizes to zero to mark placed
+  for (let i=0;i<shipSizes.length;i++) shipSizes[i]=0;
+  renderShipList(); renderBoards();
+}
+
+async function saveBoard(){
+  if (!gameId) return;
+  // ensure shipsMeta filled: convert to consistent array
+  const shipsArray = shipsMeta.filter(Boolean).map(arr => ({ cells: arr, sunk: false }));
+  await set(ref(db, `games/${gameId}/players/${myId}/board`), myBoard);
+  await set(ref(db, `games/${gameId}/players/${myId}/ships`), shipsArray);
+  await set(ref(db, `games/${gameId}/players/${myId}/ready`), true);
+  placing = false;
+  // show local check overlay
+  overlayCheck(boardMeEl);
+  log("Board opgeslagen en gemarkeerd als ready.");
+}
+
+/* overlay check */
+function overlayCheck(el){
+  el.classList.add("overlay-ready");
+  setTimeout(()=> el.classList.remove("overlay-ready"), 1200);
+}
+
+/* animation: shot flying from cannon to target tile */
+function fireAnimation(targetTile, cb){
+  const img = document.createElement("img");
+  img.src = SHOT_URL;
+  img.className = "shot";
+  cannonArea.appendChild(img);
+
+  const cannonRect = document.querySelector("#cannon") ? document.querySelector("#cannon").getBoundingClientRect() : {left:20, top:0, width:80, height:40};
+  const targetRect = targetTile.getBoundingClientRect();
+  const parentRect = cannonArea.getBoundingClientRect();
+  const startX = cannonRect.left + cannonRect.width/2 - parentRect.left;
+  const startY = cannonRect.top + cannonRect.height/2 - parentRect.top;
+  const endX = targetRect.left + targetRect.width/2 - parentRect.left;
+  const endY = targetRect.top + targetRect.height/2 - parentRect.top;
+
+  img.style.left = startX + "px"; img.style.top = startY + "px";
+  const dx = endX - startX, dy = endY - startY;
+  requestAnimationFrame(()=> { img.style.transform = `translate(${dx}px, ${dy}px) rotate(10deg) scale(0.9)`; });
+  setTimeout(()=>{ img.classList.add("hide"); setTimeout(()=>{ img.remove(); if (cb) cb(); }, 220); }, 780);
+}
+
+/* makeMove: transaction on target cell and additional sink/game detection */
+async function makeMove(cell){
+  if (!gameId) return;
+  // find target player
+  const gSnap = await get(ref(db, `games/${gameId}`));
+  const g = gSnap.val();
+  if (!g) return;
+  const players = g.players || {};
+  let targetId = null;
+  for (const pid in players) if (pid !== myId) targetId = pid;
+  if (!targetId) { popup("Geen tegenstander."); return; }
+
+  try {
+    // push move record
+    const mvRef = ref(db, `games/${gameId}/moves`);
+    const m = push(mvRef);
+    await set(m, { by: myId, cell, ts: Date.now(), status: "processing" });
+
+    // transaction on target cell
+    const cellRef = ref(db, `games/${gameId}/players/${targetId}/board/${cell}`);
+    const tx = await runTransaction(cellRef, current => {
+      if (!current || current === "empty") return "miss";
+      if (current === "ship") return "hit";
+      return; // already hit/miss -> abort
+    });
+
+    const result = tx.snapshot.val();
+    await set(ref(db, `games/${gameId}/moves/${m.key}/result`), result);
+
+    // After marking hit/miss: if hit, check if a ship got sunk
+    let sunkInfo = null;
+    if (result === "hit") {
+      // read opponent ships
+      const shipsSnap = await get(ref(db, `games/${gameId}/players/${targetId}/ships`));
+      const ships = shipsSnap.exists() ? shipsSnap.val() : [];
+      // find which ship contains this cell
+      let shipsUpdated = false;
+      for (let i=0;i<ships.length;i++){
+        const ship = ships[i];
+        if (!ship) continue;
+        if ((ship.cells || []).includes(cell)) {
+          // we now check all cells' state
+          const statusChecks = await Promise.all(ship.cells.map(async c => {
+            const cs = await get(ref(db, `games/${gameId}/players/${targetId}/board/${c}`));
+            return cs.exists() ? cs.val() === "hit" : false;
+          }));
+          const allHit = statusChecks.every(x=>x);
+          if (allHit && !ship.sunk) {
+            // mark ship sunk
+            ship.sunk = true;
+            sunkInfo = { shipIndex: i, cells: ship.cells };
+            shipsUpdated = true;
+            // write back ships array
+            await set(ref(db, `games/${gameId}/players/${targetId}/ships`), ships);
+            // set those opp cells to 'sunk' on public oppBoard view (optional)
+            for (const c of ship.cells) {
+              await set(ref(db, `games/${gameId}/players/${targetId}/board/${c}`), "hit"); // already hit
+            }
+          }
+          break;
         }
       }
-    });
-  }
+      if (sunkInfo) {
+        await set(ref(db, `games/${gameId}/moves/${m.key}/sunk`), sunkInfo);
+      }
+    }
 
-  // Ready knop: schrijf jouw board + ships naar DB en zet ready=true, verberg controls lokaal
-  if (btnReady) btnReady.addEventListener('click', async () => {
-    const lobbySnap = await get(lobbyRef); if (!lobbySnap.exists()){ showOverlay('Lobby niet gevonden'); return; } // check lobby
-    gameId = lobbySnap.val().gameId; if (!gameId){ showOverlay('Geen gameId'); return; } // check gameid
-    const remaining = shipSizes.filter(x => x>0); if (remaining.length){ showToast('Plaats al je schepen of gebruik Random'); return; } // controle
-    await set(ref(db, `games/${gameId}/players/${profile.uid}/board`), myBoardLocal); // schrijf board
-    await set(ref(db, `games/${gameId}/players/${profile.uid}/ships`), myShipsLocal); // schrijf ships
-    await set(ref(db, `games/${gameId}/players/${profile.uid}/ready`), true); // markeer ready
-    readyBadgeMe && (readyBadgeMe.textContent = '✔️ Klaar'); // visueel vinkje
-    hidePlacementControls(); // verberg knoppen lokaal
-    attachAutoStartWatcherOnce(gameId); // koppel watcher die auto-start regelt
-    showToast('Je bent klaar — wacht op tegenstander'); // feedback
-  });
+    // change turn to other player
+    await set(ref(db, `games/${gameId}/turnUid`), targetId);
 
-  // luister naar lobby updates (players + status)
-  onValue(lobbyRef, async snap => {
-    const l = snap.exists() ? snap.val() : null; if (!l){ showOverlay('Lobby verwijderd'); return; } // lobby weg
-    gameId = l.gameId; if (gameId) attachAutoStartWatcherOnce(gameId); // koppel watcher als gameId bekend
+    log(`Je schoot op ${cell} -> ${result}`);
+  } catch(e){ console.error(e); popup("Kon zet niet uitvoeren: " + e.message); }
+}
 
-    // toon players in lobby-players DOM
-    const gameRef = ref(db, `games/${gameId}`);
-    onValue(gameRef, gsnap => {
-      const g = gsnap.exists() ? gsnap.val() : null; if (!g) return;
-      const players = g.players || {};
-      const playersEl = $('lobby-players');
-      if (playersEl){
-        playersEl.innerHTML = ''; // leeg
-        for (const pid in players){
-          const p = players[pid];
-          const name = p.username || pid; const ready = p.ready ? '✔️' : '';
-          const line = document.createElement('div'); line.className='row'; line.style.justifyContent = 'space-between';
-          const left = document.createElement('div'); left.textContent = name + (pid === profile.uid ? ' (Jij)' : '');
-          const right = document.createElement('div'); right.textContent = ready;
-          line.appendChild(left); line.appendChild(right);
-          playersEl.appendChild(line);
+/* listen moves (animate + refresh boards + special popups/animations) */
+function listenMoves(){
+  const movesRef = ref(db, `games/${gameId}/moves`);
+  onValue(movesRef, async snap=>{
+    const mObj = snap.val() || {};
+    const keys = Object.keys(mObj);
+    if (!keys.length) return;
+    const last = mObj[keys[keys.length - 1]];
+    if (!last) return;
+    const tileSel = (last.by === myId) ? `#board-op [data-cell="${last.cell}"]` : `#board-me [data-cell="${last.cell}"]`;
+    const targetTile = document.querySelector(tileSel);
+    if (targetTile) {
+      fireAnimation(targetTile, async ()=>{
+        await refreshBoards();
+        // if sunk info present, show sink animation / popup
+        if (last.sunk) {
+          if (last.by === myId) {
+            popup(`Je hebt een schip verslagen!`, 2200);
+            // highlight sunk cells on opponent board
+            last.sunk.cells.forEach(c=>{
+              const t = document.querySelector(`#board-op [data-cell="${c}"]`);
+              if (t) t.classList.add("sunk");
+            });
+          } else {
+            popup(`Jouw schip is gezonken!`, 2200);
+            // highlight sunk on our board
+            last.sunk.cells.forEach(c=>{
+              const t = document.querySelector(`#board-me [data-cell="${c}"]`);
+              if (t) t.classList.add("sunk");
+            });
+          }
         }
-      }
-      // als deze client al ready is (bijv. na refresh) verberg controls
-      if (players[profile.uid] && players[profile.uid].ready){
-        hidePlacementControls();
-        readyBadgeMe && (readyBadgeMe.textContent = '✔️ Klaar');
-      }
-      // redirect naar game page zodra status in_progress
-      if (g.status === 'in_progress'){
-        const page = pageForMode(g.gamemode || l.gamemode || 'classic');
-        location.href = `${page}?lobby=${code}`;
-      }
-    });
+        // check for endgame
+        await checkGameOver();
+      });
+    } else {
+      await refreshBoards();
+      await checkGameOver();
+    }
   });
 }
 
-// Start de lobby-behaviour als pagina geladen is
-document.addEventListener('DOMContentLoaded', async () => {
-  try{ await initLobbyBehavior(); } catch(e){ console.warn('initLobbyBehavior error', e); }
-});
+async function refreshBoards(){
+  const gSnap = await get(ref(db, `games/${gameId}`));
+  const g = gSnap.val() || {};
+  infoTurn.textContent = (g.turnUid === myId) ? "Jij" : "Tegenstander";
+  const players = g.players || {};
+  for (const pid in players){
+    if (pid === myId){
+      const b = players[pid].board || {};
+      for (const k in b) myBoard[k] = b[k];
+    } else {
+      const b = players[pid].board || {};
+      for (const k in b) if (b[k] === "hit" || b[k] === "miss") oppBoard[k] = b[k];
+      // if ships with sunk statuses exist, mark oppBoard cells as sunk for UI:
+      const shipsSnap = await get(ref(db, `games/${gameId}/players/${pid}/ships`));
+      const ships = shipsSnap.exists() ? shipsSnap.val() : [];
+      for (const s of ships || []) if (s && s.sunk) { (s.cells||[]).forEach(c => oppBoard[c] = "sunk"); }
+    }
+  }
+  renderBoards();
+}
+
+/* check if a player has lost all ships -> finish game and update leaderboard */
+async function checkGameOver(){
+  const gSnap = await get(ref(db, `games/${gameId}`));
+  const g = gSnap.val() || {};
+  const players = g.players || {};
+  let winner = null;
+  for (const pid in players) {
+    const shipsSnap = await get(ref(db, `games/${gameId}/players/${pid}/ships`));
+    const ships = shipsSnap.exists() ? shipsSnap.val() : [];
+    const allSunk = ships.length > 0 && ships.every(s => s && s.sunk);
+    if (allSunk) {
+      // the other player wins
+      for (const oth in players) if (oth !== pid) winner = oth;
+      // set game finished
+      await set(ref(db, `games/${gameId}/status`), "finished");
+      await set(ref(db, `games/${gameId}/winnerUid`), winner);
+      // announce
+      if (winner === myId) {
+        winnerAnimation();
+        await updateWins(myId);
+      } else {
+        loserAnimation();
+      }
+      // show final popup
+      const msg = (winner === myId) ? "Gefeliciteerd — je hebt gewonnen!" : "Helaas, je hebt verloren.";
+      popup(msg, 4000);
+      break;
+    }
+  }
+}
+
+/* Update wins in users DB (only for non-guests) */
+async function updateWins(uid){
+  // try to increment profile wins if user exists in DB
+  try {
+    const profileSnap = await get(ref(db, `users/${uid}/profile`));
+    if (!profileSnap.exists()) return;
+    const w = profileSnap.val().wins || 0;
+    await set(ref(db, `users/${uid}/profile/wins`), w + 1);
+  } catch(e){ console.warn("Update wins failed", e); }
+}
+
+/* Simple animations */
+function winnerAnimation(){
+  const el = document.createElement("div");
+  el.className = "end-anim winner";
+  el.textContent = "WIN!";
+  document.body.appendChild(el);
+  setTimeout(()=> el.remove(), 3500);
+}
+function loserAnimation(){
+  const el = document.createElement("div");
+  el.className = "end-anim loser";
+  el.textContent = "LOSE!";
+  document.body.appendChild(el);
+  setTimeout(()=> el.remove(), 3500);
+}
+
+/* UI modal/popup creation */
+function createModalElements(){
+  // small popup area for in-game messages
+  const wrap = document.createElement("div");
+  wrap.id = "in-game-modals";
+  document.body.appendChild(wrap);
+  return wrap;
+}
+function popup(text, ms=1500){
+  const d = document.createElement("div");
+  d.className = "in-game-popup";
+  d.textContent = text;
+  modal.appendChild(d);
+  setTimeout(()=> { d.classList.add("fade"); setTimeout(()=> d.remove(), 400); }, ms);
+}
+
+/* init flow */
+async function init(){
+  if (!lobbyCode) { popup("Geen lobby code! Ga terug."); return; }
+  infoLobby.textContent = lobbyCode; infoPlayer.textContent = profile.username || profile.id;
+  const lobbySnap = await get(ref(db, `lobbies/${lobbyCode}`));
+  if (!lobbySnap.exists()) { popup("Lobby niet gevonden"); return; }
+  const lobby = lobbySnap.val();
+  gameId = lobby.gameId;
+  setSize(lobby.gamemode || 10);
+
+  // ensure player exists in game node
+  const meRef = ref(db, `games/${gameId}/players/${myId}`);
+  const meSnap = await get(meRef);
+  if (!meSnap.exists()){
+    const playersSnap = await get(ref(db, `games/${gameId}/players`));
+    let slot = 1; if (!playersSnap.exists() || Object.keys(playersSnap.val()).length === 0) slot = 0;
+    await set(meRef, { username: profile.username, slot, ready: false });
+  }
+
+  // events
+  boardMeEl.addEventListener("click", e => {
+    const t = e.target.closest(".tile"); if (!t) return; placeShipAt(t.dataset.cell);
+  });
+
+  boardOpEl.addEventListener("click", async e => {
+    const t = e.target.closest(".tile"); if (!t) return;
+    const cell = t.dataset.cell;
+    // check if your turn
+    const gSnap = await get(ref(db, `games/${gameId}`));
+    const g = gSnap.val();
+    if (!g) return;
+    if (g.turnUid !== myId){ popup("Niet jouw beurt"); return; }
+    if (oppBoard[cell] === "hit" || oppBoard[cell] === "miss" || oppBoard[cell] === "sunk"){ popup("Al geschoten op deze cel"); return; }
+    await makeMove(cell);
+  });
+
+  btnRandom.addEventListener("click", randomPlaceAll);
+  btnReady.addEventListener("click", saveBoard);
+  btnRotate.addEventListener("click", ()=>{ orientation = orientation==="H"?"V":"H"; btnRotate.textContent = `Rotate (${orientation})`; });
+
+  // on players changes: show ready status and auto-start when both ready
+  onValue(ref(db, `games/${gameId}/players`), async snap => {
+    const players = snap.val() || {};
+    const count = Object.keys(players).length;
+    // show visual ready marks
+    for (const pid in players) {
+      if (pid === myId) {
+        if (players[pid].ready) overlayCheck(boardMeEl);
+      } else {
+        if (players[pid].ready) overlayCheck(boardOpEl);
+      }
+    }
+    // auto-start when both ready
+    const ids = Object.keys(players || {});
+    if (ids.length >= 2) {
+      const bothReady = ids.every(id => players[id].ready);
+      if (bothReady && (!gSnapshotCache || gSnapshotCache.status === "waiting")) {
+        const starter = ids[Math.floor(Math.random()*ids.length)];
+        await set(ref(db, `games/${gameId}/status`), "in_progress");
+        await set(ref(db, `games/${gameId}/turnUid`), starter);
+        popup("Game gestart!", 1800);
+      }
+    }
+  });
+
+  // listen changes to game node for updates
+  let gSnapshotCache = null;
+  onValue(ref(db, `games/${gameId}`), async snap => {
+    const g = snap.val() || {};
+    gSnapshotCache = g;
+    infoTurn.textContent = (g.turnUid === myId) ? "Jij" : "Tegenstander";
+    await refreshBoards();
+  });
+
+  listenMoves();
+  renderBoards();
+  headerSub.textContent = `Gamemode: ${size} × ${size} — Plaats je schepen en druk op 'Klaar' wanneer je klaar bent.`;
+}
+
+init();
