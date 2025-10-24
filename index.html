@@ -1,113 +1,72 @@
-<!doctype html>
-<html lang="nl">
+<!doctype html> <!-- HTML5 document -->
+<html lang="nl"> <!-- taal NL -->
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Zeeslag — Login</title>
-  <link rel="stylesheet" href="styles.css">
-  <style>
-    /* kleine extra styles voor het formulier */
-    .auth-wrap{max-width:420px;margin:36px auto;padding:18px}
-    .auth-card{padding:18px;border-radius:12px;background:rgba(255,255,255,0.02)}
-    .form-row{margin-bottom:10px}
-    label{display:block;margin-bottom:6px;font-weight:700}
-    input[type="text"], input[type="password"]{width:100%;padding:10px;border-radius:8px;border:1px solid rgba(255,255,255,0.06);background:transparent;color:var(--card)}
-    .hint{font-size:13px;color:var(--muted);margin-top:6px}
-    .err{color:var(--danger);font-weight:700;margin-top:6px}
-  </style>
+  <meta charset="utf-8"> <!-- tekenset -->
+  <meta name="viewport" content="width=device-width,initial-scale=1"> <!-- mobiel vriendelijk -->
+  <title>Zeeslag — Login</title> <!-- titel -->
+  <link rel="stylesheet" href="styles.css"> <!-- laad styles -->
 </head>
 <body>
-  <main class="wrap auth-wrap">
-    <section class="card auth-card">
-      <h2>Zeeslag — Inloggen of Registreren</h2>
-      <p class="muted">Maak een account met username + pincode (4–8 chars) óf speel als gast.</p>
+  <main class="wrap"> <!-- centrale container -->
+    <section class="card auth-card"> <!-- login kaart -->
+      <h2>Zeeslag — Inloggen / Registreren</h2> <!-- kop -->
+      <p class="muted">Maak account met username + pincode (4–8) of speel als gast.</p> <!-- uitleg -->
 
-      <div id="msg" class="err" style="display:none"></div>
+      <div id="msg" style="display:none;color:#ffb3b3;margin-bottom:8px;"></div> <!-- plek voor meldingen -->
 
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px">
-        <button id="btn-show-login" class="ghost">Inloggen</button>
-        <button id="btn-show-register" class="ghost">Registreren</button>
+      <div class="form-row"> <!-- username veld -->
+        <label for="login-username">Gebruikersnaam</label> <!-- label -->
+        <input id="login-username" type="text" placeholder="Naam"> <!-- input -->
       </div>
 
-      <div id="form-login" style="margin-top:14px">
-        <div class="form-row"><label>Username</label><input id="login-username" type="text" /></div>
-        <div class="form-row"><label>Pincode (4-8 tekens)</label><input id="login-pin" type="password" /></div>
-        <div style="display:flex;gap:8px"><button id="btn-login">Log in</button><button id="btn-guest" class="ghost">Als gast spelen</button></div>
-        <div class="hint">Als dit je eerste keer is: klik op <b>Registreren</b> en maak een account.</div>
+      <div class="form-row"> <!-- pin veld -->
+        <label for="login-pin">Pincode (4-8)</label> <!-- label -->
+        <input id="login-pin" type="password" placeholder="1234"> <!-- input -->
       </div>
 
-      <div id="form-register" style="display:none;margin-top:14px">
-        <div class="form-row"><label>Username</label><input id="reg-username" type="text" /></div>
-        <div class="form-row"><label>Kies pincode (4-8 tekens)</label><input id="reg-pin" type="password" /></div>
-        <div style="display:flex;gap:8px"><button id="btn-register">Registreer</button><button id="btn-cancel-reg" class="ghost">Annuleer</button></div>
-        <div class="hint">Na registratie kun je inloggen en je voortgang (wins/games) bewaren.</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;"> <!-- knoppen -->
+        <button id="btn-login">Inloggen</button> <!-- login -->
+        <button id="btn-register" class="ghost">Registreren</button> <!-- register -->
+        <button id="btn-guest" class="ghost">Speel als gast</button> <!-- gast -->
       </div>
 
-      <div style="margin-top:12px" class="muted">Als je al bent ingelogd ga je automatisch naar de homepage.</div>
+      <p class="muted" style="margin-top:10px">Als je al ingelogd bent wordt je direct doorgestuurd.</p> <!-- hint -->
     </section>
   </main>
 
-<script type="module">
-import { tryLogin, tryRegister, playAsGuest, loadLocalProfile } from './app-auth.js';
+  <div id="short-popup"></div> <!-- korte popup element (3s meldingen) -->
 
-const $ = id => document.getElementById(id);
-const msgEl = $('msg');
+  <script type="module">
+    // index.html script: regelt inloggen/registratie/gast en redirect naar home.html
+    import { tryLogin, tryRegister, playAsGuest, loadLocalProfile } from './app-auth.js'; // import auth helpers
 
-function showMsg(txt, err=true){
-  msgEl.style.display = txt ? 'block' : 'none';
-  msgEl.textContent = txt || '';
-  if (!txt) return;
-  setTimeout(()=> { msgEl.style.display = 'none'; }, 5000);
-}
+    const $ = id => document.getElementById(id); // helper
+    const msg = $('msg'); // melding element
 
-document.addEventListener('DOMContentLoaded', ()=>{
-  // If already logged in go to home
-  const profile = loadLocalProfile();
-  if (profile && profile.uid) { location.href = 'home.html'; return; }
+    function showMsg(text, color='red'){ msg.style.display = 'block'; msg.style.color = color; msg.textContent = text; setTimeout(()=> msg.style.display='none', 3000); } // korte melding
 
-  $('btn-show-login').addEventListener('click', ()=> {
-    $('form-login').style.display = 'block';
-    $('form-register').style.display = 'none';
-  });
-  $('btn-show-register').addEventListener('click', ()=> {
-    $('form-login').style.display = 'none';
-    $('form-register').style.display = 'block';
-  });
-  $('btn-cancel-reg').addEventListener('click', ()=> {
-    $('form-register').style.display = 'none';
-    $('form-login').style.display = 'block';
-  });
+    document.addEventListener('DOMContentLoaded', ()=>{ // start als DOM geladen
+      const profile = loadLocalProfile(); // check lokaal profiel
+      if (profile && profile.uid){ location.href = 'home.html'; return; } // redirect als ingelogd
 
-  $('btn-login').addEventListener('click', async ()=>{
-    showMsg('');
-    const username = $('login-username').value.trim();
-    const pin = $('login-pin').value.trim();
-    try{
-      const ok = await tryLogin(username, pin);
-      if (ok.success) location.href = 'home.html';
-      else showMsg(ok.message || 'Login mislukt');
-    }catch(e){ console.error(e); showMsg('Login mislukt: '+(e.message||e)); }
-  });
+      $('btn-login').addEventListener('click', async ()=>{ // login klik
+        const username = $('login-username').value.trim(); // naam
+        const pin = $('login-pin').value.trim(); // pin
+        if (!username || !pin) return showMsg('Vul gebruikersnaam en pincode in'); // check
+        const res = await tryLogin(username, pin); // probeer login
+        if (res.success){ showMsg('Ingelogd...', 'green'); setTimeout(()=> location.href='home.html', 700); } else showMsg(res.message || 'Login mislukt'); // feedback
+      });
 
-  $('btn-register').addEventListener('click', async ()=>{
-    showMsg('');
-    const username = $('reg-username').value.trim();
-    const pin = $('reg-pin').value.trim();
-    try{
-      const ok = await tryRegister(username, pin);
-      if (ok.success) { location.href = 'home.html'; }
-      else showMsg(ok.message || 'Registratie mislukt');
-    }catch(e){ console.error(e); showMsg('Registratie mislukt: '+(e.message||e)); }
-  });
+      $('btn-register').addEventListener('click', async ()=>{ // register klik
+        const username = $('login-username').value.trim(); const pin = $('login-pin').value.trim();
+        if (!username || !pin) return showMsg('Vul gebruikersnaam en pincode in');
+        const res = await tryRegister(username, pin); if (res.success){ showMsg('Geregistreerd!', 'green'); setTimeout(()=> location.href='home.html', 700); } else showMsg(res.message || 'Registratie mislukt');
+      });
 
-  $('btn-guest').addEventListener('click', async ()=>{
-    showMsg('');
-    try{
-      await playAsGuest();
-      location.href = 'home.html';
-    }catch(e){ console.error(e); showMsg('Kon niet als gast starten: '+(e.message||e)); }
-  });
-});
-</script>
+      $('btn-guest').addEventListener('click', async ()=>{ // gast klik
+        await playAsGuest(); showMsg('Je speelt als gast', 'green'); setTimeout(()=> location.href='home.html', 700);
+      });
+    });
+  </script>
 </body>
 </html>
