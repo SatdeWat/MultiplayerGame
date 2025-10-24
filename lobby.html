@@ -1,103 +1,54 @@
 <!doctype html>
 <html lang="nl">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Lobby — Zeeslag</title>
-  <link rel="stylesheet" href="styles.css">
+  <meta charset="utf-8"> <!-- tekens -->
+  <meta name="viewport" content="width=device-width,initial-scale=1"> <!-- mobiel -->
+  <title>Lobby — Zeeslag</title> <!-- titel -->
+  <link rel="stylesheet" href="styles.css"> <!-- styles -->
 </head>
 <body>
-<main class="wrap">
-  <header class="topbar"><h1>Lobby</h1><p class="subtitle">Maak of join een lobby</p></header>
+  <main class="wrap">
+    <div class="topbar">
+      <div><h1>Lobby</h1><div class="muted">Wacht op tegenstander</div></div> <!-- header -->
+      <div id="profile-info" class="muted"></div> <!-- profile info -->
+    </div>
 
-  <section class="card" id="create-box">
-    <div id="create-area">
-      <label>Join code <input id="join-code" placeholder="ABC123"></label>
-      <div class="row" style="margin-top:8px">
-        <button id="btn-join">Join</button>
-        <a href="home.html" style="margin-left:8px">Terug</a>
+    <section class="card">
+      <h3>Lobby code: <span id="lobby-code-display">—</span> <button id="btn-copy-lobby">Copy</button></h3> <!-- code weergave -->
+      <div id="lobby-players" style="margin-top:8px"></div> <!-- spelerslijst -->
+      <div style="margin-top:12px;display:flex;gap:8px;">
+        <button id="btn-leave-lobby" class="ghost">Leave lobby</button> <!-- leave -->
+        <button id="start-game-btn">Force start (host)</button> <!-- host kan forceren -->
       </div>
-      <div id="join-status" class="muted" style="margin-top:8px"></div>
-    </div>
 
-    <div id="host-area" class="hidden" style="margin-top:12px">
-      <h3>Lobby aangemaakt</h3>
-      <div>Code: <span id="host-code" style="font-weight:700"></span></div>
-      <div style="margin-top:8px">Wacht tot iemand join. Zodra iemand join, wordt je doorgestuurd naar het spel om schepen te plaatsen.</div>
-      <div style="margin-top:8px" class="muted">Je kunt deze pagina open laten.</div>
-      <div style="margin-top:8px"><button id="btn-cancel">Annuleer lobby</button></div>
-    </div>
-  </section>
-</main>
+      <hr style="margin:12px 0;">
 
-<script type="module">
-import { loadLocalProfile } from "./app-auth.js";
-import { db } from "./firebase-config.js";
-import { ref, get, set, onValue } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
+      <div style="display:flex;gap:12px;">
+        <div style="flex:1;">
+          <h4>Je bord</h4> <!-- eigen bord -->
+          <div id="board-me" class="board"></div> <!-- grid -->
+          <div style="margin-top:8px;display:flex;gap:8px;">
+            <button id="btn-random-place">Random</button> <!-- random plaatsen -->
+            <button id="btn-rotate">Rotate (H)</button> <!-- rotatie -->
+            <button id="btn-ready">Klaar</button> <!-- klaar -->
+          </div>
+          <div id="ship-list" class="ship-list" style="margin-top:8px"></div> <!-- schepen -->
+          <div id="ready-badge-me" class="muted" style="margin-top:6px"></div> <!-- klaar badge -->
+        </div>
 
-const $ = id => document.getElementById(id);
-document.addEventListener('DOMContentLoaded', async ()=>{
-  const profile = loadLocalProfile();
-  if (!profile) { location.href = "index.html"; return; }
+        <div style="flex:1;">
+          <h4>Vijand</h4>
+          <div id="board-op" class="board"></div> <!-- vijand board -->
+          <div id="ready-badge-op" class="muted" style="margin-top:8px"></div> <!-- klaar badge tegenstander -->
+        </div>
+      </div>
 
-  const params = new URLSearchParams(location.search);
-  const codeFromHome = params.get('code');
-  const joinInput = $('join-code'), btnJoin = $('btn-join'), joinStatus = $('join-status');
-  const hostArea = $('host-area'), hostCodeEl = $('host-code'), btnCancel = $('btn-cancel');
+      <div id="log" class="log" style="margin-top:10px;"></div> <!-- korte log -->
+    </section>
+  </main>
 
-  // If we have a code param, host just created it from home -> show code and wait
-  if (codeFromHome){
-    // show host panel
-    hostArea.classList.remove('hidden');
-    $('create-area').classList.add('hidden');
-    hostCodeEl.textContent = codeFromHome;
-    // listen for player count on games/{gameId}/players
-    const lobbySnap = await get(ref(db, `lobbies/${codeFromHome}`));
-    if (!lobbySnap.exists()){ joinStatus.textContent = "Lobby niet gevonden"; return; }
-    const lobby = lobbySnap.val();
-    const gameId = lobby.gameId;
-    onValue(ref(db, `games/${gameId}/players`), snap => {
-      const players = snap.val() || {};
-      const keys = Object.keys(players);
-      if (keys.length >= 2){
-        // someone joined — redirect to appropriate game page
-        const gm = lobby.gamemode || 'classic';
-        const target = gm === 'power' ? 'game_power.html' : (gm === 'streak' ? 'game_streak.html' : 'game_classic.html');
-        location.href = `${target}?lobby=${codeFromHome}`;
-      }
-    });
-    btnCancel.addEventListener('click', async ()=>{
-      await set(ref(db, `lobbies/${codeFromHome}`), null);
-      // remove game if exists
-      if (lobby && lobby.gameId) await set(ref(db, `games/${lobby.gameId}`), null);
-      location.href = "home.html";
-    });
-    return;
-  }
+  <div id="short-popup"></div> <!-- korte popups -->
 
-  // Join flow
-  btnJoin.addEventListener('click', async ()=>{
-    const code = joinInput.value.trim().toUpperCase();
-    if (!code) { joinStatus.textContent = "Vul een code in"; return; }
-    joinStatus.textContent = "Joining...";
-    try {
-      const lobbySnap = await get(ref(db, `lobbies/${code}`));
-      if (!lobbySnap.exists()){ joinStatus.textContent = "Lobby niet gevonden"; return; }
-      const lobby = lobbySnap.val();
-      const gameId = lobby.gameId;
-      // add player
-      await set(ref(db, `games/${gameId}/players/${profile.uid}`), { username: profile.username, ready:false, slot:1 });
-      // redirect to corresponding game page
-      const gm = lobby.gamemode || 'classic';
-      const target = gm === 'power' ? 'game_power.html' : (gm === 'streak' ? 'game_streak.html' : 'game_classic.html');
-      location.href = `${target}?lobby=${code}`;
-    } catch(err){
-      joinStatus.textContent = "Kon niet joinen: " + (err.message || err);
-      console.error(err);
-    }
-  });
-
-});
-</script>
+  <script type="module" src="lobby.js"></script> <!-- lobby logic -->
 </body>
 </html>
