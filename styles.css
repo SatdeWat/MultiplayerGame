@@ -1,52 +1,78 @@
-/* styles.css — basisstijl voor de hele app, lichte blauwe tiles, nette layout */
-
-/* kleuren */
 :root{
-  --bg1: #031427; /* donkere achtergrond */
-  --bg2: #06304a; /* tweede tint */
-  --card: #e6eef8; /* lichte tekst */
-  --muted: rgba(255,255,255,0.65); /* mutede tekst */
-  --tile-sea: #79bde6; /* lichtblauw voor vakjes (jouw verzoek) */
-  --tile-sea-dark: #4fa3d3; /* iets donkerder */
-  --hit: #ff5b5b; /* rood voor hit */
-  --sunk: #111111; /* zwart voor gezonken */
+  --bg:#071426;
+  --card:#eaf4ff;
+  --accent:#0b6df1;
+  --muted:#6b7a89;
 }
 
-/* algemene layout */
-*{ box-sizing: border-box; } /* handig */
-body{ margin:0; font-family: Inter, Arial, sans-serif; background: linear-gradient(180deg,var(--bg1),var(--bg2)); color:var(--card); -webkit-font-smoothing:antialiased; } /* body stijl */
-.wrap{ max-width:1100px; margin:28px auto; padding:14px; } /* centraal vak */
+*{box-sizing:border-box}
+body{margin:0;font-family:Inter,Segoe UI,Helvetica,Arial;background:linear-gradient(180deg,#042033 0%, #07243a 100%);color:#eaf4ff}
+.wrap{max-width:1100px;margin:28px auto;padding:16px}
+.topbar{margin-bottom:12px}
+.topbar h1{margin:0;font-size:28px}
+.subtitle{margin:6px 0 0;font-size:13px;color:#d7ecff}
 
-/* kaarten */
-.card{ background: rgba(255,255,255,0.03); padding:14px; border-radius:12px; box-shadow: 0 8px 24px rgba(0,0,0,0.45); border:1px solid rgba(255,255,255,0.03); } /* kaart */
+.card{background:rgba(255,255,255,0.03);padding:16px;border-radius:12px;margin-bottom:16px;box-shadow:0 10px 30px rgba(2,8,23,0.6)}
+.form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px}
+label{display:block;font-size:13px;color:#dff0ff}
+input,select{width:100%;padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.06);background:rgba(255,255,255,0.02);color:var(--card)}
+.row{display:flex;gap:8px;align-items:center}
+.space-between{justify-content:space-between}
+button{background:var(--accent);color:white;border:0;padding:10px 14px;border-radius:10px;cursor:pointer;box-shadow:0 6px 10px rgba(11,109,241,0.14)}
+button:disabled{opacity:0.5;cursor:not-allowed}
+.muted{color:var(--muted);font-size:12px}
+.or{text-align:center;margin:8px 0;color:var(--muted)}
+.auth-columns{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
+.auth-message{margin-top:10px}
 
-/* topbar */
-.topbar{ display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:12px; } /* bovenste balk */
+/* boards */
+.boards{display:flex;gap:16px;flex-wrap:wrap}
+.board-card{flex:1;min-width:320px}
+.board{display:grid;border-radius:10px;overflow:hidden;background:linear-gradient(180deg,#aee0ff,#88bfe9);aspect-ratio:1/1;position:relative;box-shadow:inset 0 2px 8px rgba(255,255,255,0.06)}
+.board .tile{border:1px solid rgba(0,0,0,0.06);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;cursor:pointer; user-select:none; position:relative}
+.board.cell-5{grid-template-columns:repeat(5,1fr);grid-auto-rows:1fr}
+.board.cell-10{grid-template-columns:repeat(10,1fr);grid-auto-rows:1fr}
+.board.cell-15{grid-template-columns:repeat(15,1fr);grid-auto-rows:1fr}
 
-/* board grid */
-.board{ display:grid; gap:4px; background:transparent; border-radius:8px; padding:6px; } /* board container */
-.cell-10 .tile{ min-width:36px; min-height:36px; } /* grootte 10x */
-.cell-15 .tile{ min-width:30px; min-height:30px; } /* grootte 15x */
-.cell-20 .tile{ min-width:24px; min-height:24px; } /* grootte 20x */
+.tile.sea{background:linear-gradient(180deg,#80c6ff,#59a7e6)}
+.tile.ship{background:linear-gradient(180deg,#34515f,#2b3b44); color:#fff}
+.tile.hit{background:linear-gradient(180deg,#ff6b6b,#c43a3a); color:white}
+.tile.miss{background:linear-gradient(180deg,#f0f7ff,#cfe9ff)}
+.tile.sunk{background:linear-gradient(180deg,#6b1f1f,#9a3636); color:white; transform: scale(1.05); box-shadow: 0 6px 20px rgba(0,0,0,0.6);}
 
-/* tile basis en states */
-.tile{ display:flex; align-items:center; justify-content:center; background: linear-gradient(180deg,var(--tile-sea),var(--tile-sea-dark)); border-radius:6px; color:#042033; font-weight:700; cursor:pointer; transition: transform .12s, box-shadow .12s; user-select:none; } /* standaard veld: lichtblauw */
-.tile:hover{ transform: translateY(-3px); box-shadow: 0 6px 18px rgba(0,0,0,0.3); } /* hover effect */
-.tile.ship{ box-shadow: inset 0 0 0 2px rgba(0,0,0,0.06); } /* eigen schip zichtbaar (subtiel) */
-.tile.hit{ background: linear-gradient(90deg,var(--hit), #ff8080); color:#fff; } /* raak: rood */
-.tile.miss{ background: linear-gradient(90deg,#cfeafc, #b6e0fb); color:#06223a; } /* mis: lichte waterkleur */
-.tile.sunk{ background: linear-gradient(90deg,var(--sunk), #333); color:#fff; } /* gezonken: zwart */
+/* controls & ship list */
+.controls{margin-top:8px;display:flex;gap:8px}
+.ship-list{margin-top:10px;display:flex;gap:8px;flex-wrap:wrap}
+.ship-pill{padding:6px 8px;border-radius:8px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.03);color:var(--card);cursor:pointer}
+.ship-pill.active{outline:2px solid rgba(255,255,255,0.12);box-shadow:0 6px 12px rgba(2,8,23,0.4)}
 
-/* knoppen en forms */
-button{ padding:8px 12px; border-radius:10px; background:rgba(255,255,255,0.04); color:var(--card); border:1px solid rgba(255,255,255,0.06); cursor:pointer; }
-button.ghost{ background:transparent; opacity:0.9; }
-.form-row{ margin:8px 0; }
+/* timer removed, overlay ready */
+.overlay-ready{position:relative;outline:6px solid rgba(11,109,241,0.15);transition:outline 400ms}
 
-/* kleine helpers */
-.muted{ color:var(--muted); font-size:13px; }
-.log{ max-height:160px; overflow:auto; font-size:13px; color:var(--muted); margin-top:8px; }
-.overlay{ position:fixed; left:0; top:0; right:0; bottom:0; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,0.6); z-index:9999; } /* overlay */
-.overlay-inner{ background:#061026; padding:16px; border-radius:10px; color:var(--card); max-width:480px; width:92%; } /* overlay inner */
+/* cannon */
+#cannon{height:80px}
+#cannon-area{height:120px;position:relative}
+.shot{position:absolute;width:36px;height:36px;pointer-events:none;transition:transform 700ms cubic-bezier(.2,.9,.3,1), opacity 300ms;z-index:999}
+.shot.hide{opacity:0}
+.log{max-height:160px;overflow:auto;margin-top:10px;background:rgba(255,255,255,0.02);padding:8px;border-radius:8px;font-size:13px;color:#e6f6ff}
 
-/* toast (korte popups) */
-#app-toast, #short-popup{ padding:10px 14px; border-radius:10px; background: rgba(0,0,0,0.48); color:var(--card); font-weight:600; position:fixed; left:50%; transform:translateX(-50%); bottom:22px; z-index:10000; display:none; } /* korte popup */
+/* modals / popups */
+#in-game-modals{position:fixed;left:50%;top:12%;transform:translateX(-50%);z-index:2000;pointer-events:none}
+.in-game-popup{background:rgba(0,0,0,0.6);padding:10px 14px;border-radius:12px;margin-top:8px;color:white;backdrop-filter: blur(3px);transition:transform 300ms,opacity 300ms}
+.in-game-popup.fade{opacity:0;transform:translateY(-6px);}
+
+/* end animations */
+.end-anim{position:fixed;left:50%;top:40%;transform:translateX(-50%);font-size:48px;padding:18px 28px;border-radius:14px;color:white;z-index:3000}
+.end-anim.winner{background:linear-gradient(90deg,#ffd700,#ff8533);box-shadow:0 10px 40px rgba(255,168,0,0.25)}
+.end-anim.loser{background:linear-gradient(90deg,#6b1f1f,#9a3636);box-shadow:0 10px 40px rgba(0,0,0,0.25)}
+
+/* leaderboard */
+.leaderboard{display:flex;flex-direction:column;gap:6px}
+.leader-headers{display:flex;gap:12px;font-weight:700;padding-bottom:8px;border-bottom:1px solid rgba(255,255,255,0.04)}
+.leader-row{display:flex;gap:12px;padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.02);align-items:center}
+.leader-row .pos{width:36px}
+.leader-row .wins{margin-left:auto}
+
+/* small notices */
+.notice{margin-top:8px;padding:10px;background:rgba(255,255,255,0.02);border-left:4px solid rgba(11,109,241,0.8)}
+.hidden{display:none}
