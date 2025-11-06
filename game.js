@@ -1,80 +1,87 @@
 import { db, ref, set, get, onValue, update } from "./firebase.js";
 
 const username = localStorage.getItem("username");
-const lobbyCode = localStorage.getItem("lobbyCode");
 const isGuest = localStorage.getItem("isGuest") === "true";
+const lobbyCode = localStorage.getItem("lobbyCode");
 
-if (!username || !lobbyCode) window.location.href = "index.html";
+if(!username || !lobbyCode) window.location.href="index.html";
 
-// HTML elementen
+const lobbyScreen = document.getElementById("lobbyScreen");
+const gameScreen = document.getElementById("gameScreen");
+const readyBtn = document.getElementById("readyBtn");
+const rotateBtn = document.getElementById("rotateBtn");
+const playerNameSpan = document.getElementById("playerName");
+const opponentNameSpan = document.getElementById("opponentName");
+const lobbyCodeDisplay = document.getElementById("lobbyCodeDisplay");
 const myBoardDiv = document.getElementById("myBoard");
 const enemyBoardDiv = document.getElementById("enemyBoard");
 const turnInfo = document.getElementById("turnInfo");
 const gameMessage = document.getElementById("gameMessage");
-const readyBtn = document.getElementById("readyBtn");
-const rotateBtn = document.getElementById("rotateBtn");
-const readyStatus = document.getElementById("readyStatus");
 
 let lobbyData = null;
 let opponent = null;
 let size = 10;
-let shipsArray = [3,4,5]; // schepen
+let shipsArray = [];
 let placedShips = [];
 let hoverCells = [];
-let orientation = "horizontal"; // horiz / vert
+let orientation = "horizontal";
+let phase = "placing";
 let myShots = {};
-let phase = "placing"; // placing -> waiting -> playing -> ended
 let isMyTurn = false;
 
-const lobbyRef = ref(db, "lobbies/" + lobbyCode);
-const gameRef = ref(db, "games/" + lobbyCode);
+const lobbyRef = ref(db,"lobbies/"+lobbyCode);
+const gameRef = ref(db,"games/"+lobbyCode);
 
-// --- Init ---
-async function init() {
+async function init(){
   const snap = await get(lobbyRef);
-  if (!snap.exists()) { alert("Lobby niet gevonden!"); window.location.href="home.html"; return; }
+  if(!snap.exists()){ alert("Lobby niet gevonden!"); window.location.href="home.html"; return; }
   lobbyData = snap.val();
-
   size = lobbyData.size;
-  opponent = (lobbyData.host === username) ? lobbyData.guest : lobbyData.host;
+  shipsArray = Array(lobbyData.ships).fill(0).map((_,i)=>lobbyData.ships-i);
+  opponent = (lobbyData.host === username)?lobbyData.guest:lobbyData.host;
+  lobbyCodeDisplay.textContent = lobbyCode;
+  playerNameSpan.textContent = username + " ❌";
+  createBoard(myBoardDiv,size,true,placeShipPreview);
+  createBoard(enemyBoardDiv,size,false,shoot);
 
-  createBoard(myBoardDiv, size, true, placeShipPreview);
-  createBoard(enemyBoardDiv, size, false, shoot);
+  onValue(lobbyRef,snap=>{
+    const data = snap.val();
+    opponent = (lobbyData.host === username)?data.guest:data.host;
+    opponentNameSpan.textContent = (opponent || "Wachten...") + ((data.ready?.[opponent])?" ✅":" ❌");
 
-  gameMessage.textContent = `Plaats je schip van lengte ${shipsArray[0]}`;
+    if(data.ready?.[username] && data.ready?.[opponent]){
+      startGame();
+    }
+  });
 }
-
 init();
 
 // --- Bord maken ---
-function createBoard(boardDiv, size, clickable=false, clickHandler=null){
-  boardDiv.innerHTML = "";
-  boardDiv.style.display="grid";
-  boardDiv.style.gridTemplateColumns = `repeat(${size},40px)`;
-  boardDiv.style.gridTemplateRows = `repeat(${size},40px)`;
-
+function createBoard(boardDiv,size,clickable=false,handler=null){
+  boardDiv.innerHTML="";
+  boardDiv.style.gridTemplateColumns=`repeat(${size},40px)`;
+  boardDiv.style.gridTemplateRows=`repeat(${size},40px)`;
   for(let y=0;y<size;y++){
     for(let x=0;x<size;x++){
       const cell = document.createElement("div");
       cell.classList.add("cell");
       cell.dataset.x=x;
       cell.dataset.y=y;
-      if(clickable && clickHandler){
-        cell.addEventListener("mouseenter",()=>clickHandler(x,y,true));
-        cell.addEventListener("mouseleave",()=>clickHandler(x,y,false));
-        cell.addEventListener("click",()=>clickHandler(x,y,"place"));
+      if(clickable && handler){
+        cell.addEventListener("mouseenter",()=>handler(x,y,true));
+        cell.addEventListener("mouseleave",()=>handler(x,y,false));
+        cell.addEventListener("click",()=>handler(x,y,"place"));
       }
       boardDiv.appendChild(cell);
     }
   }
 }
 
-// --- Hover / plaatsen ---
+// --- Hover / Plaats ---
 function placeShipPreview(x,y,action){
   if(phase!=="placing") return;
   const length = shipsArray[0];
-  const coords = [];
-
+  const coords=[];
   for(let i=0;i<length;i++){
     let cx = x + (orientation==="horizontal"?i:0);
     let cy = y + (orientation==="vertical"?i:0);
@@ -82,83 +89,54 @@ function placeShipPreview(x,y,action){
     coords.push(`${cx},${cy}`);
   }
 
-  if(action===true){ // hover in
-    coords.forEach(c=>{
-      const [cx,cy]=c.split(",");
-      const cell=[...myBoardDiv.children].find(d=>d.dataset.x==cx && d.dataset.y==cy);
-      if(cell) { cell.style.background="rgba(0,255,0,0.4)"; hoverCells.push(cell);}
-    });
-  } else if(action===false){ // hover out
-    hoverCells.forEach(c=>c.style.background="rgba(255,255,255,0.1)");
-    hoverCells=[];
-  } else if(action==="place"){ // klik
-    coords.forEach(c=>{
-      if(placedShips.flat().includes(c)) return alert("Schepen overlappen niet!");
-    });
+  if(action===true){coords.forEach(c=>{ const [cx,cy]=c.split(","); const cell=[...myBoardDiv.children].find(d=>d.dataset.x==cx&&d.dataset.y==cy); if(cell) {cell.style.background="rgba(0,255,0,0.4)"; hoverCells.push(cell);}});}
+  else if(action===false){hoverCells.forEach(c=>c.style.background="rgba(255,255,255,0.1)"); hoverCells=[];}
+  else if(action==="place"){
+    if(coords.flat().some(c=>placedShips.flat().includes(c))) return alert("Schepen overlappen niet!");
     placedShips.push(coords);
-    coords.forEach(c=>{
-      const [cx,cy]=c.split(",");
-      const cell=[...myBoardDiv.children].find(d=>d.dataset.x==cx && d.dataset.y==cy);
-      if(cell) { cell.style.background="#4caf50"; cell.textContent="🚢";}
-    });
+    coords.forEach(c=>{ const [cx,cy]=c.split(","); const cell=[...myBoardDiv.children].find(d=>d.dataset.x==cx&&d.dataset.y==cy); if(cell){ cell.style.background="#4caf50"; cell.textContent="🚢";}});
     shipsArray.shift();
-    if(shipsArray.length>0) gameMessage.textContent=`Plaats je schip van lengte ${shipsArray[0]}`;
+    if(shipsArray.length>0) gameMessage.textContent=`Plaats schip van lengte ${shipsArray[0]}`;
     else gameMessage.textContent="Klik op Klaar als je klaar bent!";
   }
 }
 
-// --- Rotate knop ---
-rotateBtn.addEventListener("click",()=>{
-  orientation = orientation==="horizontal"?"vertical":"horizontal";
-});
+// --- Rotate ---
+rotateBtn.addEventListener("click",()=>{orientation=orientation==="horizontal"?"vertical":"horizontal";});
 
-// --- Klaar knop ---
-readyBtn.addEventListener("click",async()=>{
-  if(shipsArray.length>0){ alert("Plaats eerst al je schepen!"); return; }
+// --- Klaar ---
+readyBtn.addEventListener("click", async ()=>{
+  if(shipsArray.length>0){ alert("Plaats eerst alle schepen!"); return; }
   phase="waiting";
   readyBtn.disabled=true;
-
   if(!isGuest){
-    await set(ref(db,`games/${lobbyCode}/${username}`), {ships: placedShips.flat(), shots:{}, ready:true});
+    await update(ref(db,`lobbies/${lobbyCode}/ready`),{[username]:true});
+    await set(ref(db,`games/${lobbyCode}/${username}`),{ships:placedShips.flat(),shots:{},ready:true});
   }
-
-  updateReadyStatus();
-  waitForOpponent();
 });
 
-// --- Ready status realtime ---
-function updateReadyStatus(){
+// --- Start spel ---
+function startGame(){
+  lobbyScreen.style.display="none";
+  gameScreen.style.display="block";
+  phase="playing";
+  gameMessage.textContent="Spel gestart!";
+
   onValue(gameRef,snap=>{
-    const data=snap.val()||{};
-    const meReady=data[username]?.ready? "✅":"❌";
-    const oppReady=data[opponent]?.ready? "✅":"❌";
-    readyStatus.textContent=`Jij klaar: ${meReady} | Tegenstander klaar: ${oppReady}`;
+    const d=snap.val()||{};
+    isMyTurn=d.turn===username;
+    turnInfo.textContent=isMyTurn?"Jij bent aan de beurt!":"Tegenstander is aan de beurt...";
+    renderBoards(d);
+    checkWin(d);
   });
-}
 
-// --- Wacht tot beide klaar ---
-function waitForOpponent(){
-  onValue(gameRef,snap=>{
-    const data=snap.val()||{};
-    if(!data[username]?.ready || !data[opponent]?.ready) return;
-    phase="playing";
-    gameMessage.textContent="Spel gestart!";
-    readyBtn.style.display="none";
-
-    if(!data.turn){
+  // bepaal eerste beurt als nog niet gezet
+  get(gameRef).then(snap=>{
+    const d=snap.val()||{};
+    if(!d.turn){
       const first = Math.random()<0.5?username:opponent;
       update(gameRef,{turn:first});
     }
-
-    // realtime updates
-    onValue(gameRef,snap2=>{
-      const d=snap2.val()||{};
-      isMyTurn=d.turn===username;
-      turnInfo.textContent=isMyTurn?"Jij bent aan de beurt!":"Tegenstander is aan de beurt...";
-      myShots=d[username]?.shots||{};
-      renderBoards(d);
-      checkWin(d);
-    });
   });
 }
 
@@ -166,19 +144,17 @@ function waitForOpponent(){
 async function shoot(x,y){
   if(!isMyTurn || phase!=="playing") return;
   const key=`${x},${y}`;
-  if(myShots[key]) return;
+  const myDataSnap = await get(ref(db,`games/${lobbyCode}/${username}/shots`));
+  const myData = myDataSnap.val()||{};
+  if(myData[key]) return;
 
-  myShots[key]=true;
-  await update(ref(db,`games/${lobbyCode}/${username}/shots`),myShots);
-
-  const dataSnap=await get(gameRef);
-  const data=dataSnap.val();
-  update(gameRef,{turn:opponent});
+  myData[key]=true;
+  await update(ref(db,`games/${lobbyCode}/${username}/shots`),myData);
+  await update(gameRef,{turn:opponent});
 }
 
-// --- Render borden ---
+// --- Render ---
 function renderBoards(data){
-  // vijand schoten op mijn bord
   if(data[opponent]?.shots){
     Object.keys(data[opponent].shots).forEach(k=>{
       const [x,y]=k.split(",");
@@ -188,8 +164,6 @@ function renderBoards(data){
       else { cell.style.background="blue"; cell.textContent="🌊"; }
     });
   }
-
-  // mijn schoten op vijand
   if(data[username]?.shots && data[opponent]?.ships){
     Object.keys(data[username].shots).forEach(k=>{
       const [x,y]=k.split(",");
@@ -206,15 +180,16 @@ function checkWin(data){
   if(!data[username]?.ships || !data[opponent]?.ships) return;
   const enemyShipsLeft = data[opponent].ships.filter(s=>!data[username].shots[s]);
   const myShipsLeft = placedShips.flat().filter(s=>!data[opponent]?.shots?.[s]);
-
   if(enemyShipsLeft.length===0){
     gameMessage.textContent="🎉 Jij hebt gewonnen!";
     if(!isGuest) endGame(username, opponent);
     phase="ended";
+    setTimeout(()=>window.location.href="end.html",2000);
   } else if(myShipsLeft.length===0){
     gameMessage.textContent="💀 Je hebt verloren!";
     if(!isGuest) endGame(opponent, username);
     phase="ended";
+    setTimeout(()=>window.location.href="end.html",2000);
   }
 }
 
@@ -222,13 +197,10 @@ function checkWin(data){
 async function endGame(winner,loser){
   const winnerRef = ref(db,"users/"+winner);
   const loserRef = ref(db,"users/"+loser);
-
   const wSnap=await get(winnerRef);
   const lSnap=await get(loserRef);
-
   const wData=wSnap.val();
   const lData=lSnap.val();
-
   await update(winnerRef,{wins:(wData?.wins||0)+1,games:(wData?.games||0)+1});
   await update(loserRef,{games:(lData?.games||0)+1});
 }
