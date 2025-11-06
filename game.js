@@ -10,12 +10,12 @@ import {
 } from "./firebase.js";
 
 const username = localStorage.getItem("username");
-const lobbyCode = localStorage.getItem("lobbyCode");
+let lobbyCode = localStorage.getItem("lobbyCode");
 if (!username || !lobbyCode) {
   window.location.href = "home.html";
 }
 
-// DOM references
+// DOM
 const myBoardDiv = document.getElementById("myBoard");
 const enemyBoardDiv = document.getElementById("enemyBoard");
 const rotateBtn = document.getElementById("rotateBtn");
@@ -35,9 +35,9 @@ const enemyBoardCard = enemyBoardDiv.closest(".board-card");
 const myBoardTitle = myBoardCard ? myBoardCard.querySelector(".board-title") : null;
 const enemyBoardTitle = enemyBoardCard ? enemyBoardCard.querySelector(".board-title") : null;
 
-// Firebase refs
-const lobbyRef = ref(db, `lobbies/${lobbyCode}`);
-const gameRef = ref(db, `games/${lobbyCode}`);
+// Firebase refs (we will recreate when lobbyCode changes on rematch)
+let lobbyRef = ref(db, `lobbies/${lobbyCode}`);
+let gameRef = ref(db, `games/${lobbyCode}`);
 
 // State
 let lobbyData = null;
@@ -46,16 +46,22 @@ let size = 10;
 let mode = "classic";
 let orientation = "horizontal";
 let shipLengths = [];
-let placedShips = []; // local ships array-of-arrays, e.g. [["0,0","1,0"], ...]
-let phase = "placing"; // placing -> waiting -> playing -> ended
+let placedShips = []; // local ships array-of-arrays
+let phase = "placing";
 let myPowerShots = 0;
 let usingPowerMode = false;
-let lastTurnShown = null; // to update turnPopup persistently
+let awaitingTurnChange = false; // prevents multi-click per turn
+let lastTurnShown = null;
 
-// cell size small so two boards fit side-by-side
-const CELL_PX = 26;
+// dynamic cell size per board size (20x20 smaller)
+function getCellPxForSize(n) {
+  if (n <= 10) return 30;
+  if (n <= 15) return 26;
+  return 18; // for 20x20 (or larger) make smaller
+}
+let CELL_PX = getCellPxForSize(size); // updated in init once size known
 
-// map size->ships
+// ships mapping
 function shipsForSize(boardSize) {
   if (boardSize === 10) return [5, 4, 3];
   if (boardSize === 15) return [5, 4, 3, 3];
@@ -77,9 +83,9 @@ function ensureReadyIndicator(titleEl) {
   return span;
 }
 function setReadyIndicator(titleEl, ready) {
-  const span = ensureReadyIndicator(titleEl);
-  if (!span) return;
-  span.textContent = ready ? "✅" : "";
+  const s = ensureReadyIndicator(titleEl);
+  if (!s) return;
+  s.textContent = ready ? "✅" : "";
 }
 function ensureRematchIndicator(titleEl) {
   if (!titleEl) return null;
@@ -95,83 +101,180 @@ function ensureRematchIndicator(titleEl) {
   return span;
 }
 function setRematchIndicator(titleEl, requested) {
-  const span = ensureRematchIndicator(titleEl);
-  if (!span) return;
-  span.textContent = requested ? " (rematch aangevraagd)" : "";
+  const s = ensureRematchIndicator(titleEl);
+  if (!s) return;
+  s.textContent = requested ? " (rematch aangevraagd)" : "";
 }
 
+// persistent turn popup
 function persistTurnPopup(name) {
-  // Show who is currently on turn and keep it visible (persistent).
+  lastTurnShown = name;
   if (!turnPopup) return;
   const text = name === username ? "Jij" : name;
   turnPopup.innerHTML = `Aan de beurt: <strong id="turnPlayer">${text}</strong>`;
   turnPopup.style.display = "block";
-  lastTurnShown = name;
 }
-function showTemp(message, ms = 1200) {
+function showTempPopup(msg, ms = 1000) {
   if (!turnPopup) return;
-  turnPopup.innerHTML = `<strong>${message}</strong>`;
+  const prev = lastTurnShown;
+  turnPopup.innerHTML = `<strong>${msg}</strong>`;
   turnPopup.style.display = "block";
   setTimeout(() => {
-    // After the temp banner we restore persistent turn if known
-    if (lastTurnShown) persistTurnPopup(lastTurnShown);
+    if (prev) persistTurnPopup(prev);
     else turnPopup.style.display = "none";
   }, ms);
 }
-function showStartThenPersistTurn(first) {
-  // show "Game starts!" briefly then persistently show who starts
-  showTemp("Game starts!", 1100);
+function showStartThenPersist(first) {
+  showTempPopup("Game starts!", 1100);
   setTimeout(() => persistTurnPopup(first), 1100);
 }
 
-// End modal & rematch button
-let endModalEl = null;
-function showEndModal(winnerText) {
-  if (!endModalEl) {
-    endModalEl = document.createElement("div");
-    endModalEl.style.position = "fixed";
-    endModalEl.style.left = "50%";
-    endModalEl.style.top = "26%";
-    endModalEl.style.transform = "translateX(-50%)";
-    endModalEl.style.zIndex = "9999";
-    endModalEl.style.background = "#fff";
-    endModalEl.style.padding = "16px";
-    endModalEl.style.borderRadius = "10px";
-    endModalEl.style.boxShadow = "0 12px 36px rgba(0,0,0,0.25)";
-    endModalEl.style.textAlign = "center";
-    document.body.appendChild(endModalEl);
-  }
-  endModalEl.innerHTML = `<div style="font-weight:700;font-size:18px;margin-bottom:10px">${winnerText} heeft gewonnen!</div>`;
-  const rem = document.createElement("button");
-  rem.textContent = "Rematch";
-  rem.style.padding = "8px 12px";
-  rem.style.borderRadius = "8px";
-  rem.style.cursor = "pointer";
-  rem.addEventListener("click", async () => {
-    await update(ref(db, `games/${lobbyCode}/rematchRequests`), { [username]: true });
-    // show local feedback
-    const s = document.createElement("div");
-    s.textContent = "Rematch aangevraagd, wachten op tegenstander...";
-    s.style.marginTop = "8px";
-    endModalEl.appendChild(s);
-    // show local rematch indicator too
-    setRematchIndicator(myBoardTitle, true);
+// fancy end overlay with simple confetti + rematch button
+let endOverlay = null;
+function createEndOverlay() {
+  if (endOverlay) return endOverlay;
+  endOverlay = document.createElement("div");
+  Object.assign(endOverlay.style, {
+    position: "fixed",
+    left: "0",
+    top: "0",
+    width: "100%",
+    height: "100%",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 99999,
+    pointerEvents: "auto"
   });
-  endModalEl.appendChild(rem);
-  endModalEl.style.display = "block";
+  // background blur + gradient
+  const bg = document.createElement("div");
+  Object.assign(bg.style, {
+    position: "absolute",
+    left: "0",
+    top: "0",
+    width: "100%",
+    height: "100%",
+    background: "linear-gradient(180deg, rgba(0,0,0,0.55), rgba(0,0,0,0.7))",
+    display: "block"
+  });
+  endOverlay.appendChild(bg);
+
+  // container
+  const card = document.createElement("div");
+  Object.assign(card.style, {
+    position: "relative",
+    zIndex: 100000,
+    background: "#fff",
+    padding: "28px",
+    borderRadius: "14px",
+    boxShadow: "0 18px 60px rgba(0,0,0,0.45)",
+    textAlign: "center",
+    width: "min(720px, 92%)"
+  });
+
+  const trophy = document.createElement("div");
+  trophy.innerHTML = "🏆";
+  trophy.style.fontSize = "64px";
+  trophy.style.transform = "translateY(-6px)";
+  card.appendChild(trophy);
+
+  const title = document.createElement("div");
+  title.id = "end-title";
+  title.style.fontSize = "20px";
+  title.style.fontWeight = "800";
+  title.style.marginTop = "8px";
+  card.appendChild(title);
+
+  const subtitle = document.createElement("div");
+  subtitle.style.marginTop = "8px";
+  subtitle.style.color = "#555";
+  subtitle.innerText = "Goed gespeeld! Wil je nog een potje?";
+  card.appendChild(subtitle);
+
+  const remBtn = document.createElement("button");
+  remBtn.textContent = "Rematch";
+  Object.assign(remBtn.style, {
+    marginTop: "16px",
+    padding: "10px 14px",
+    borderRadius: "8px",
+    border: "none",
+    cursor: "pointer",
+    background: "linear-gradient(90deg,#42a5f5,#1e88e5)",
+    color: "#fff",
+    fontWeight: "700"
+  });
+  remBtn.addEventListener("click", async () => {
+    // set rematch request for this player
+    await update(ref(db, `games/${lobbyCode}/rematchRequests`), { [username]: true });
+    // local feedback
+    setRematchIndicator(myBoardTitle, true);
+    remBtn.disabled = true;
+    remBtn.textContent = "Rematch aangevraagd";
+  });
+  card.appendChild(remBtn);
+
+  // small note about opponent's rematch
+  const remNote = document.createElement("div");
+  remNote.id = "rem-note";
+  remNote.style.marginTop = "10px";
+  remNote.style.fontSize = "13px";
+  remNote.style.color = "#666";
+  card.appendChild(remNote);
+
+  // confetti simple: floating colored dots
+  const confettiWrap = document.createElement("div");
+  Object.assign(confettiWrap.style, { position: "absolute", inset: "0", pointerEvents: "none", overflow: "hidden" });
+  for (let i = 0; i < 24; i++) {
+    const dot = document.createElement("div");
+    const sizeRand = 6 + Math.floor(Math.random() * 10);
+    Object.assign(dot.style, {
+      position: "absolute",
+      left: `${Math.random() * 100}%`,
+      top: `-10%`,
+      width: `${sizeRand}px`,
+      height: `${sizeRand}px`,
+      borderRadius: "50%",
+      background: ["#f44336", "#ff9800", "#ffeb3b", "#66bb6a", "#42a5f5", "#9c27b0"][Math.floor(Math.random()*6)],
+      opacity: "0.95",
+      transform: `translateY(0) rotate(${Math.random()*360}deg)`,
+      animation: `fall ${(3 + Math.random()*2).toFixed(2)}s linear ${Math.random()*0.5}s forwards`
+    });
+    confettiWrap.appendChild(dot);
+  }
+  // add a style tag for the fall animation
+  const styleEl = document.createElement("style");
+  styleEl.innerHTML = `
+    @keyframes fall {
+      to { transform: translateY(110vh) rotate(720deg); opacity: 0.9; }
+    }
+  `;
+  card.appendChild(styleEl);
+
+  endOverlay.appendChild(confettiWrap);
+  endOverlay.appendChild(card);
+  document.body.appendChild(endOverlay);
+  endOverlay.style.display = "none";
+  return endOverlay;
 }
-function hideEndModal() {
-  if (!endModalEl) return;
-  endModalEl.style.display = "none";
-  endModalEl.innerHTML = "";
+function showEndOverlay(winnerText, remStatusOpp = false) {
+  const overlay = createEndOverlay();
+  overlay.style.display = "flex";
+  const title = overlay.querySelector("#end-title");
+  if (title) title.textContent = `${winnerText} heeft gewonnen!`;
+  const remNote = overlay.querySelector("#rem-note");
+  if (remNote) remNote.textContent = remStatusOpp ? "Tegenstander heeft ook rematch gevraagd." : "Wacht op rematch of vraag er zelf een aan.";
+}
+function hideEndOverlay() {
+  if (!endOverlay) return;
+  endOverlay.style.display = "none";
 }
 
-// widen container so both boards fit nicer
+// widen page so two boards comfortably fit
 function widenContainer() {
   const container = document.querySelector(".container");
   if (container) {
     container.style.maxWidth = "1400px";
-    container.style.width = "95%";
+    container.style.width = "96%";
   }
   const boardsContainer = document.querySelector(".boards");
   if (boardsContainer) {
@@ -183,17 +286,20 @@ function widenContainer() {
   }
 }
 
-// ---------- INIT ----------
+// ---------- initialization ----------
 (async function init() {
   widenContainer();
 
-  // create ready/rematch indicators early
+  // ensure indicators exist
   ensureReadyIndicator(myBoardTitle);
   ensureReadyIndicator(enemyBoardTitle);
   ensureRematchIndicator(myBoardTitle);
   ensureRematchIndicator(enemyBoardTitle);
 
-  // initial DB read
+  // read lobby
+  lobbyRef = ref(db, `lobbies/${lobbyCode}`);
+  gameRef = ref(db, `games/${lobbyCode}`);
+
   const s = await get(lobbyRef);
   if (!s.exists()) { alert("Lobby niet gevonden."); location.href = "home.html"; return; }
   lobbyData = s.val();
@@ -202,17 +308,17 @@ function widenContainer() {
   shipLengths = shipsForSize(size);
   opponent = (lobbyData.host === username) ? lobbyData.guest : lobbyData.host;
 
+  CELL_PX = getCellPxForSize(size);
+
   mySizeLabel.textContent = `${size}x${size}`;
   enemySizeLabel.textContent = `${size}x${size}`;
   placeHint.textContent = `Plaats schip van lengte ${shipLengths[0]}`;
 
-  // create boards
   createBoard(myBoardDiv, size, true, onMyCellEvent);
   createBoard(enemyBoardDiv, size, false, onEnemyCellClick);
-
   rotateBtn.textContent = `Rotate (${orientation})`;
 
-  // ensure /games node exists when both players present
+  // Ensure games node exists when both players present
   onValue(lobbyRef, async (lsnap) => {
     const data = lsnap.val() || {};
     lobbyData = data;
@@ -220,7 +326,7 @@ function widenContainer() {
     if (data.host && data.guest) {
       const gsnap = await get(gameRef);
       if (!gsnap.exists()) {
-        await set(gameRef, {
+        await set(ref(db, `games/${lobbyCode}`), {
           [data.host]: { ships: [], shots: {} },
           [data.guest]: { ships: [], shots: {} },
           turn: null,
@@ -230,32 +336,32 @@ function widenContainer() {
     }
   });
 
-  // main games listener
+  // main game listener
   onValue(gameRef, async (gsnap) => {
     const data = gsnap.val() || {};
     if (!data) return;
 
-    // players present keys
-    const playerKeys = Object.keys(data).filter(k => k !== "turn" && k !== "rematchRequests");
+    // player keys present
+    const playerKeys = Object.keys(data).filter(k => k !== "turn" && k !== "rematchRequests" && k !== "rematchStarted");
     if (!opponent && playerKeys.length >= 2) opponent = playerKeys.find(k => k !== username);
 
     const meNode = data[username] || {};
     const oppNode = data[opponent] || {};
 
-    // update powerShots UI
+    // powerShots UI
     if (meNode.powerShots !== undefined) {
       myPowerShots = meNode.powerShots || 0;
       powerCountSpan.textContent = myPowerShots;
       usePowerBtn.style.display = myPowerShots > 0 ? "inline-block" : "none";
+      if (myPowerShots <= 0) usePowerBtn.disabled = true;
     }
 
-    // adopt our ships from DB if present (e.g., page reload)
+    // adopt ships from DB if page reloaded
     if (meNode.ships && Array.isArray(meNode.ships) && meNode.ships.length > 0 && placedShips.length === 0) {
       placedShips = meNode.ships.slice();
-      // render them locally
       placedShips.forEach(ship => ship.forEach(coord => {
         const c = findCell(myBoardDiv, coord);
-        if (c) { c.style.background = "#4caf50"; c.textContent = "🚢"; }
+        if (c) { c.style.background = "#4caf50"; c.textContent = "🚢"; c.style.color = ""; }
       }));
       shipLengths = [];
       doneBtn.style.display = "none";
@@ -271,69 +377,98 @@ function widenContainer() {
     setRematchIndicator(myBoardTitle, !!remReq[username]);
     setRematchIndicator(enemyBoardTitle, !!remReq[opponent]);
 
-    // render visuals (shots/hits and sunk detection)
+    // render
     renderBoards(data);
 
-    // both ready -> start playing
+    // both ready -> start
     if (meNode && oppNode && meNode.ready && oppNode.ready && phase !== "playing") {
       if (!data.turn) {
         const first = Math.random() < 0.5 ? username : opponent;
         await update(gameRef, { turn: first });
         lastTurnShown = first;
-        showStartThenPersistTurn(first);
+        showStartThenPersist(first);
       } else {
         lastTurnShown = data.turn;
-        showStartThenPersistTurn(data.turn);
+        showStartThenPersist(data.turn);
       }
       phase = "playing";
       gameNote.textContent = "Spel gestart!";
-      placeHint.textContent = ""; // remove waiting hint
+      placeHint.textContent = "";
       if (rotateBtn) rotateBtn.style.display = "none";
     }
 
-    // always persistently show turn if set
+    // persist turn popup always when turn present
     if (data.turn) {
-      lastTurnShown = data.turn;
       persistTurnPopup(data.turn);
     }
 
-    // handle rematch accepted & new game reset: if remReq both true -> reset DB (serverless)
-    if (remReq[username] && remReq[opponent]) {
-      // reset DB nodes for next round
-      if (lobbyData && lobbyData.host && lobbyData.guest) {
-        await set(gameRef, {
-          [lobbyData.host]: { ships: [], shots: {}, ready: false, powerShots: 0 },
-          [lobbyData.guest]: { ships: [], shots: {}, ready: false, powerShots: 0 },
+    // rematch: if both requested and rematch not yet started -> create new lobby & redirect both
+    const remReqObj = data.rematchRequests || {};
+    if (remReqObj[username] && remReqObj[opponent]) {
+      // only create once: check rematchStarted flag
+      if (!data.rematchStarted) {
+        // create new lobby code
+        const newCode = generateLobbyCode();
+        // create lobbies/newCode and games/newCode
+        const newLobbyObj = {
+          host: username,
+          guest: opponent,
+          size,
+          mode,
+          createdAt: Date.now()
+        };
+        await set(ref(db, `lobbies/${newCode}`), newLobbyObj);
+        await set(ref(db, `games/${newCode}`), {
+          [username]: { ships: [], shots: {}, ready: false, powerShots: 0 },
+          [opponent]: { ships: [], shots: {}, ready: false, powerShots: 0 },
           turn: null,
           rematchRequests: {}
         });
+        // write rematchStarted so both clients pick it up
+        await update(gameRef, { rematchStarted: newCode });
+      } else if (data.rematchStarted) {
+        // when rematchStarted exists: both clients should redirect once to the new lobby code
+        const newCode = data.rematchStarted;
+        // clear end overlay & prepare to redirect to same game.html with new lobbyCode
+        hideEndOverlay();
+        // update localStorage and navigate (reload) so the init logic picks new lobby
+        localStorage.setItem("lobbyCode", newCode);
+        // small delay to let DB updates flush on both sides
+        setTimeout(() => {
+          window.location.href = "game.html";
+        }, 350);
       }
-      // reset local
-      placedShips = [];
-      shipLengths = shipsForSize(size);
-      phase = "placing";
-      placeHint.textContent = `Plaats schip van lengte ${shipLengths[0]}`;
-      doneBtn.style.display = "none";
-      if (rotateBtn) rotateBtn.style.display = "inline-block";
-      hideEndModal();
-      createBoard(myBoardDiv, size, true, onMyCellEvent);
-      createBoard(enemyBoardDiv, size, false, onEnemyCellClick);
-      // clear persistent turn popup
-      if (turnPopup) turnPopup.style.display = "none";
-      lastTurnShown = null;
+    }
+
+    // if rematchStarted exists (maybe created by opponent first) - ensure we redirect
+    if (data.rematchStarted && !(remReqObj[username] && remReqObj[opponent])) {
+      // other side created rematchStarted but we didn't yet request rematch -> still redirect to new lobby immediately
+      const newCode = data.rematchStarted;
+      hideEndOverlay();
+      localStorage.setItem("lobbyCode", newCode);
+      setTimeout(() => { window.location.href = "game.html"; }, 350);
     }
 
     // winner detection
     const winner = detectWinner(data);
     if (winner && phase !== "ended") {
       phase = "ended";
-      showEndModal(winner === username ? "Jij" : winner);
-      // hide persistent turn (optional)
-      // turnPopup.style.display = "none";
+      // show animated overlay
+      showEndOverlay(winner === username ? "Jij" : winner, !!(data.rematchRequests && data.rematchRequests[opponent]));
+      // show rematch indicator as well
+    }
+
+    // clear awaiting-turn flag when the DB turn changes away from me
+    if (data.turn && data.turn !== username) {
+      awaitingTurnChange = false;
+    }
+    // also if turn becomes me again (after server change) clear awaiting
+    if (data.turn && data.turn === username) {
+      awaitingTurnChange = false;
     }
   });
 
-  // rotate toggle
+  // rotate
   rotateBtn.addEventListener("click", () => {
     orientation = (orientation === "horizontal") ? "vertical" : "horizontal";
     rotateBtn.textContent = `Rotate (${orientation})`;
@@ -358,6 +493,7 @@ function widenContainer() {
     setReadyIndicator(myBoardTitle, true);
   });
 
+  // use power btn
   usePowerBtn.addEventListener("click", () => {
     if (myPowerShots <= 0) return;
     usingPowerMode = true;
@@ -365,15 +501,17 @@ function widenContainer() {
     usePowerBtn.textContent = "Kies 3x3 target...";
   });
 
+  // back
   backHome.addEventListener("click", () => { location.href = "home.html"; });
-})(); // end init
+})(); // init end
 
-// ---------- create board ----------
+// ---------- board creation ----------
 function createBoard(container, gridSize, clickable = false, handler = null) {
   container.innerHTML = "";
+  const cellPx = getCellPxForSize(gridSize);
   container.style.display = "grid";
-  container.style.gridTemplateColumns = `repeat(${gridSize}, ${CELL_PX}px)`;
-  container.style.gridTemplateRows = `repeat(${gridSize}, ${CELL_PX}px)`;
+  container.style.gridTemplateColumns = `repeat(${gridSize}, ${cellPx}px)`;
+  container.style.gridTemplateRows = `repeat(${gridSize}, ${cellPx}px)`;
   container.classList.add("board-grid");
   for (let y = 0; y < gridSize; y++) {
     for (let x = 0; x < gridSize; x++) {
@@ -381,12 +519,12 @@ function createBoard(container, gridSize, clickable = false, handler = null) {
       cell.className = "cell";
       cell.dataset.x = x;
       cell.dataset.y = y;
-      cell.style.width = `${CELL_PX}px`;
-      cell.style.height = `${CELL_PX}px`;
+      cell.style.width = `${cellPx}px`;
+      cell.style.height = `${cellPx}px`;
       cell.style.display = "flex";
       cell.style.alignItems = "center";
       cell.style.justifyContent = "center";
-      cell.style.fontSize = "13px";
+      cell.style.fontSize = `${Math.max(10, Math.floor(cellPx/2.2))}px`;
       cell.style.boxSizing = "border-box";
       cell.style.border = "1px solid rgba(0,0,0,0.06)";
       cell.style.background = "rgba(255,255,255,0.03)";
@@ -414,7 +552,6 @@ function onMyCellEvent(x, y, type, cellEl) {
     if (cx >= size || cy >= size) { coords.length = 0; break; }
     coords.push(`${cx},${cy}`);
   }
-
   if (type === "enter") {
     const overlap = coords.some(c => placedShips.flat().includes(c));
     coords.forEach(coord => {
@@ -429,7 +566,7 @@ function onMyCellEvent(x, y, type, cellEl) {
     placedShips.push(coords.slice());
     coords.forEach(coord => {
       const cc = findCell(myBoardDiv, coord);
-      if (cc) { cc.classList.remove("preview-valid"); cc.style.background = "#4caf50"; cc.textContent = "🚢"; }
+      if (cc) { cc.classList.remove("preview-valid"); cc.style.background = "#4caf50"; cc.textContent = "🚢"; cc.style.color = ""; }
     });
     shipLengths.shift();
     if (shipLengths.length > 0) placeHint.textContent = `Plaats schip van lengte ${shipLengths[0]}`;
@@ -437,48 +574,55 @@ function onMyCellEvent(x, y, type, cellEl) {
   }
 }
 
-// ---------- enemy click (shoot) ----------
+// ---------- enemy clicks (shoot/powershot) ----------
 async function onEnemyCellClick(x, y, type, cellEl) {
   if (type !== "click") return;
   if (phase !== "playing") return;
   if (!opponent) return;
+  if (awaitingTurnChange) return; // block extra clicks while waiting
 
   // check turn from DB
   const gsnap = await get(gameRef);
   const g = gsnap.val() || {};
   if (!g.turn) return;
-  if (g.turn !== username) return; // not your turn
+  if (g.turn !== username) return;
 
+  // powershot active?
   if (usingPowerMode) {
-    // 3x3
+    // build 3x3
     const toShot = [];
-    for (let dy = -1; dy <= 1; dy++) {
-      for (let dx = -1; dx <= 1; dx++) {
-        const sx = x + dx, sy = y + dy;
-        if (sx >= 0 && sx < size && sy >= 0 && sy < size) toShot.push(`${sx},${sy}`);
-      }
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      const sx = x + dx, sy = y + dy;
+      if (sx >= 0 && sx < size && sy >= 0 && sy < size) toShot.push(`${sx},${sy}`);
     }
+    // write shots
     const shotsRef = ref(db, `games/${lobbyCode}/${username}/shots`);
     const snapShots = await get(shotsRef);
     const current = snapShots.exists() ? snapShots.val() : {};
     toShot.forEach(k => current[k] = true);
+    // set awaiting to block further clicks until DB turn changes
+    awaitingTurnChange = true;
     await update(shotsRef, current);
+    // consume one powerShot locally & in DB
     myPowerShots = Math.max(0, myPowerShots - 1);
     await update(ref(db, `games/${lobbyCode}/${username}`), { powerShots: myPowerShots });
     usingPowerMode = false;
-    usePowerBtn.disabled = false;
+    usePowerBtn.disabled = true;
     usePowerBtn.textContent = `Use PowerShot (${myPowerShots})`;
+    // resolve turn logic (power mode still switches after power shot)
     await resolveTurnAfterShots(current, true);
     return;
   }
 
-  // normal shot
+  // normal single shot
   const key = `${x},${y}`;
   const shotsRef = ref(db, `games/${lobbyCode}/${username}/shots`);
   const snapShots = await get(shotsRef);
   const current = snapShots.exists() ? snapShots.val() : {};
   if (current[key]) return;
   current[key] = true;
+  // block multi-clicks until DB updates
+  awaitingTurnChange = true;
   await update(shotsRef, current);
   await resolveTurnAfterShots(current, false);
 }
@@ -497,6 +641,7 @@ function didShotHit(shotsObj, opponentShipsGrouped) {
 }
 
 async function resolveTurnAfterShots(myShotsObj, wasPowerShot) {
+  // read latest game & opponent ships
   const gsnap = await get(gameRef);
   const g = gsnap.val() || {};
   const oppData = g[opponent] || {};
@@ -504,80 +649,87 @@ async function resolveTurnAfterShots(myShotsObj, wasPowerShot) {
   const result = didShotHit(myShotsObj, oppShips);
 
   if (mode === "streak") {
-    if (result.hit) await update(gameRef, { turn: username });
-    else await update(gameRef, { turn: opponent });
+    // in streak: keep turn on hit, else switch
+    if (result.hit) {
+      await update(gameRef, { turn: username });
+    } else {
+      await update(gameRef, { turn: opponent });
+    }
   } else {
+    // classic & power: always switch (BUT for power grant if sunk)
     if (result.sunkIndex !== null && mode === "power") {
+      // grant one powerShot (safe-read/write)
       const selfRef = ref(db, `games/${lobbyCode}/${username}`);
       const selfSnap = await get(selfRef);
       const selfData = selfSnap.exists() ? selfSnap.val() : {};
       const nowPower = (selfData.powerShots || 0) + 1;
       await update(selfRef, { powerShots: nowPower });
       myPowerShots = nowPower;
+      // update UI
+      powerCountSpan.textContent = myPowerShots;
+      usePowerBtn.style.display = myPowerShots > 0 ? "inline-block" : "none";
     }
     await update(gameRef, { turn: opponent });
   }
+  // awaitingTurnChange will be cleared by onValue listener once the DB turn changes
 }
 
-// ---------- render boards (with sunk detection) ----------
+// ---------- render boards (sunk detection + skulls) ----------
 function renderBoards(data) {
   const myNode = data[username] || {};
   const oppNode = data[opponent] || {};
 
-  // MY board: clear non-placed cells
+  // MY board: reset non-placed
   [...myBoardDiv.children].forEach(cell => {
     const key = `${cell.dataset.x},${cell.dataset.y}`;
     if (!placedShips.flat().includes(key)) {
       cell.style.background = "rgba(255,255,255,0.03)";
       cell.textContent = "";
+      cell.style.color = "";
     }
   });
-  // Render my ships (normal)
+  // mark placed ships normally
   placedShips.flat().forEach(k => {
     const c = findCell(myBoardDiv, k);
-    if (c) { c.style.background = "#4caf50"; c.textContent = "🚢"; }
+    if (c) { c.style.background = "#4caf50"; c.textContent = "🚢"; c.style.color = ""; }
   });
 
-  // Opponent shots on my board -> mark misses/hits and sunk ships with 💀
+  // opponent shots on my board -> hits/misses and sunk (💀)
   const oppShots = (oppNode && oppNode.shots) ? Object.keys(oppNode.shots) : [];
-  // For each of my ships, check sunk
   placedShips.forEach(ship => {
     const allHit = ship.every(coord => oppShots.includes(coord));
     if (allHit) {
-      // sunk: mark all ship cells black + skull
       ship.forEach(coord => {
         const c = findCell(myBoardDiv, coord);
         if (c) { c.style.background = "#111"; c.textContent = "💀"; c.style.color = "#fff"; }
       });
     } else {
-      // partially hit cells should show 🔥
       ship.forEach(coord => {
         const c = findCell(myBoardDiv, coord);
         if (!c) return;
         if (oppShots.includes(coord)) {
           c.style.background = "#d9534f";
           c.textContent = "🔥";
+          c.style.color = "#fff";
         }
       });
     }
   });
-  // show misses on my board (water) for shots that didn't hit ships
+  // show misses on my board
   oppShots.forEach(k => {
     if (!placedShips.flat().includes(k)) {
       const c = findCell(myBoardDiv, k);
-      if (c) { c.style.background = "#4aa3ff"; c.textContent = "🌊"; }
+      if (c) { c.style.background = "#4aa3ff"; c.textContent = "🌊"; c.style.color = ""; }
     }
   });
 
-  // ENEMY board: clear and show my shots; show sunk enemy ships as black + skull, but never show full enemy ships otherwise
-  [...enemyBoardDiv.children].forEach(c => { c.style.background = "rgba(255,255,255,0.03)"; c.textContent = ""; });
+  // ENEMY board: only show my shots (hits/misses). reveal full ship only when sunk
+  [...enemyBoardDiv.children].forEach(c => { c.style.background = "rgba(255,255,255,0.03)"; c.textContent = ""; c.style.color = ""; });
 
-  const myShots = myNode && myNode.shots ? Object.keys(myNode.shots) : [];
-
-  // If oppNode.ships exists we can determine sunk enemy ships (only reveal sank ships)
+  const myShots = (myNode && myNode.shots) ? Object.keys(myNode.shots) : [];
   const enemyShips = (oppNode && oppNode.ships) ? oppNode.ships : [];
 
-  // For each enemy ship, if ALL its coords are in myShots => mark them as sunk (💀)
+  // show sunk enemy ships (full reveal as skull)
   enemyShips.forEach(ship => {
     const sunk = ship.every(coord => myShots.includes(coord));
     if (sunk) {
@@ -586,30 +738,30 @@ function renderBoards(data) {
         if (c) { c.style.background = "#111"; c.textContent = "💀"; c.style.color = "#fff"; }
       });
     } else {
-      // show hits for individual coords I hit
+      // show hits on ship parts only
       ship.forEach(coord => {
         if (myShots.includes(coord)) {
           const c = findCell(enemyBoardDiv, coord);
-          if (c) { c.style.background = "#d9534f"; c.textContent = "🔥"; }
+          if (c) { c.style.background = "#d9534f"; c.textContent = "🔥"; c.style.color = "#fff"; }
         }
       });
     }
   });
 
-  // show my misses (cells I shot that do not belong to any enemy ship)
+  // show misses (shots not hitting any ship)
   myShots.forEach(k => {
     const belongsToShip = enemyShips.some(ship => ship.includes(k));
     if (!belongsToShip) {
       const c = findCell(enemyBoardDiv, k);
-      if (c) { c.style.background = "#4aa3ff"; c.textContent = "🌊"; }
+      if (c) { c.style.background = "#4aa3ff"; c.textContent = "🌊"; c.style.color = ""; }
     }
   });
 }
 
-// ---------- detect winner ----------
+// ---------- winner detection ----------
 function detectWinner(gdata) {
   if (!gdata) return null;
-  const playerKeys = Object.keys(gdata).filter(k => k !== "turn" && k !== "rematchRequests");
+  const playerKeys = Object.keys(gdata).filter(k => k !== "turn" && k !== "rematchRequests" && k !== "rematchStarted");
   if (playerKeys.length < 2) return null;
   const [pA, pB] = playerKeys;
   const aShips = (gdata[pA] && Array.isArray(gdata[pA].ships)) ? gdata[pA].ships.flat() : [];
@@ -627,4 +779,12 @@ function detectWinner(gdata) {
 function findCell(board, key) {
   const [x, y] = key.split(",");
   return [...board.children].find(c => c.dataset.x == x && c.dataset.y == y);
+}
+
+// generate lobby code (6 chars)
+function generateLobbyCode() {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  let s = "";
+  for (let i = 0; i < 6; i++) s += chars.charAt(Math.floor(Math.random() * chars.length));
+  return s;
 }
