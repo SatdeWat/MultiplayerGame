@@ -7,49 +7,69 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<div class="login-container">
+<div class="container">
   <h1>⚓ Zeeslag ⚓</h1>
-  <input type="text" id="username" placeholder="Gebruikersnaam">
-  <input type="password" id="pincode" placeholder="Pincode (min. 4 cijfers)">
-  <div class="button-group">
-    <button id="loginBtn">Inloggen</button>
-    <button id="registerBtn" class="secondary">Registreren</button>
+  
+  <div id="loginSection">
+    <input type="text" id="usernameInput" placeholder="Gebruikersnaam">
+    <input type="password" id="passwordInput" placeholder="Wachtwoord">
+    <button id="loginBtn">Login</button>
+    <button id="registerBtn">Register</button>
+    <button id="guestBtn">Speel als gast</button>
+    <p id="loginMessage"></p>
   </div>
-  <p id="message"></p>
 </div>
 
 <script type="module">
 import { db, ref, get, set } from "./firebase.js";
 
-const usernameInput = document.getElementById("username");
-const pincodeInput = document.getElementById("pincode");
+const usernameInput = document.getElementById("usernameInput");
+const passwordInput = document.getElementById("passwordInput");
 const loginBtn = document.getElementById("loginBtn");
 const registerBtn = document.getElementById("registerBtn");
-const message = document.getElementById("message");
+const guestBtn = document.getElementById("guestBtn");
+const loginMessage = document.getElementById("loginMessage");
 
-// Registreren
-registerBtn.addEventListener("click", async () => {
+// --- Login ---
+loginBtn.addEventListener("click", async ()=>{
   const username = usernameInput.value.trim();
-  const pincode = pincodeInput.value.trim();
-  if (!username || !pincode || pincode.length < 4) { message.textContent="Vul een geldige gebruikersnaam en pincode in!"; return; }
-  const snapshot = await get(ref(db, "users/" + username));
-  if (snapshot.exists()) { message.textContent="Gebruiker bestaat al!"; return; }
-  await set(ref(db, "users/" + username), { pincode, wins:0, games:0 });
-  message.style.color="lightgreen";
-  message.textContent="Registratie gelukt! Je kunt nu inloggen.";
+  const password = passwordInput.value.trim();
+  if(!username || !password){ loginMessage.textContent="Vul alle velden in!"; return; }
+
+  const userRef = ref(db,"users/"+username);
+  const snap = await get(userRef);
+  if(!snap.exists()){ loginMessage.textContent="Gebruiker bestaat niet!"; return; }
+  const data = snap.val();
+  if(data.password !== password){ loginMessage.textContent="Verkeerd wachtwoord!"; return; }
+
+  localStorage.setItem("username", username);
+  localStorage.setItem("isGuest", "false");
+  window.location.href="home.html";
 });
 
-// Inloggen
-loginBtn.addEventListener("click", async () => {
+// --- Register ---
+registerBtn.addEventListener("click", async ()=>{
   const username = usernameInput.value.trim();
-  const pincode = pincodeInput.value.trim();
-  if (!username || !pincode) { message.textContent="Vul je gegevens in!"; return; }
-  const snapshot = await get(ref(db, "users/" + username));
-  if (!snapshot.exists()) { message.textContent="Gebruiker niet gevonden!"; return; }
-  if (snapshot.val().pincode === pincode) {
-    localStorage.setItem("username", username);
-    window.location.href = "home.html";
-  } else { message.textContent="❌ Onjuiste pincode!"; }
+  const password = passwordInput.value.trim();
+  if(!username || !password){ loginMessage.textContent="Vul alle velden in!"; return; }
+
+  const userRef = ref(db,"users/"+username);
+  const snap = await get(userRef);
+  if(snap.exists()){ loginMessage.textContent="Gebruiker bestaat al!"; return; }
+
+  await set(userRef, {password: password, wins:0, games:0});
+  localStorage.setItem("username", username);
+  localStorage.setItem("isGuest", "false");
+  window.location.href="home.html";
+});
+
+// --- Speel als gast ---
+guestBtn.addEventListener("click", ()=>{
+  const guestName = prompt("Vul een tijdelijke naam in:");
+  if(!guestName) return;
+  localStorage.setItem("username", guestName);
+  localStorage.setItem("isGuest", "true");
+  window.location.href="home.html";
 });
 </script>
 </body>
