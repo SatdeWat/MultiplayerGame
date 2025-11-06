@@ -1,60 +1,89 @@
 <!DOCTYPE html>
 <html lang="nl">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>Zeeslag - Lobby</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <div class="container">
-  <h1>⚓ Lobby ⚓</h1>
-  <p id="lobbyCodeDisplay"></p>
-  <p id="status">Wachten op tegenstander...</p>
+  <h1>⚓ Lobby</h1>
+
+  <div class="lobby-box">
+    <div class="lobby-info">
+      <div>Lobby code: <span class="code-pill" id="codePill"></span></div>
+      <div style="margin-top:8px;">Jij: <span id="youName"></span> <span id="youReady" class="badge not-ready">❌</span></div>
+      <div>Tegenstander: <span id="themName">Wachten...</span> <span id="themReady" class="badge not-ready">❌</span></div>
+    </div>
+
+    <div>
+      <button id="backHome" class="secondary">Terug</button>
+      <div style="height:12px"></div>
+      <button id="readyToggle">Klaar</button>
+    </div>
+  </div>
+
+  <p class="msg" id="lobbyMsg">Wacht tot de andere speler join. Deel de code.</p>
 </div>
 
 <script type="module">
-import { db, ref, onValue, update } from "./firebase.js";
+import { db, dbRef as ref, dbGet as get, dbUpdate as update, dbOnValue as onValue } from "./firebase.js";
 
 const username = localStorage.getItem("username");
 const lobbyCode = localStorage.getItem("lobbyCode");
-if(!username || !lobbyCode) window.location.href="index.html";
+const isGuest = localStorage.getItem("isGuest")==="true";
+if(!username || !lobbyCode) window.location.href="home.html";
 
-const lobbyRef = ref(db,"lobbies/"+lobbyCode);
-const lobbyCodeDisplay = document.getElementById("lobbyCodeDisplay");
-const status = document.getElementById("status");
+const codePill = document.getElementById("codePill");
+const youName = document.getElementById("youName");
+const themName = document.getElementById("themName");
+const youReady = document.getElementById("youReady");
+const themReady = document.getElementById("themReady");
+const backHome = document.getElementById("backHome");
+const readyToggle = document.getElementById("readyToggle");
+const lobbyMsg = document.getElementById("lobbyMsg");
 
-lobbyCodeDisplay.textContent = "Lobby code: " + lobbyCode;
+codePill.textContent = lobbyCode;
+youName.textContent = username;
 
-onValue(lobbyRef, async snapshot=>{
-  const data = snapshot.val();
-  if(!data) { alert("Lobby niet gevonden!"); window.location.href="home.html"; return; }
+const lobbyRef = ref(db, "lobbies/" + lobbyCode);
 
-  const isGuest = localStorage.getItem("isGuest") === "true";
+onValue(lobbyRef, snap=>{
+  const data = snap.val();
+  if(!data) { alert("Lobby bestaat niet meer."); window.location.href = "home.html"; return; }
+  const opp = (data.host === username) ? data.guest : data.host;
+  themName.textContent = opp || "Wachten...";
+  const youR = data.ready && data.ready[username];
+  const themR = data.ready && opp && data.ready[opp];
 
-  // Host view
-  if(data.host === username && data.guest==="") {
-    status.textContent="Wachten op tegenstander...";
-  } else if(data.host === username && data.guest!=="") {
-    status.textContent=`Tegenstander ${data.guest} verbonden! Start spel...`;
+  youReady.textContent = youR ? "✅" : "❌";
+  youReady.className = "badge " + (youR ? "ready":"not-ready");
+  themReady.textContent = themR ? "✅" : "❌";
+  themReady.className = "badge " + (themR ? "ready":"not-ready");
 
-    // Alleen echte spelers worden in games DB opgeslagen
-    if(!isGuest){
-      await update(ref(db,"games/"+lobbyCode),{
-        [username]: {ships:[], shots:[]},
-        [data.guest]: {ships:[], shots:[]}
-      });
-    }
-
-    await update(lobbyRef,{gameStarted:true});
-    setTimeout(()=> window.location.href="game.html",1000);
+  // If both ready and both players present => create game entries and go to game page
+  if(data.ready && opp && data.ready[username] && data.ready[opp]){
+    // create game nodes if not exist
+    update(ref(db, "games/" + lobbyCode), {
+      [data.host]: { ships: [], shots: {} },
+      [data.guest]: { ships: [], shots: {} }
+    }).then(()=> {
+      window.location.href = "game.html";
+    });
   }
+});
 
-  // Guest view
-  if(data.guest === username){
-    status.textContent="Verbonden met host! Start spel...";
-    setTimeout(()=> window.location.href="game.html",1000);
-  }
+backHome.addEventListener("click", ()=>{
+  // optional: remove lobby if host and guest empty
+  window.location.href = "home.html";
+});
+
+readyToggle.addEventListener("click", async ()=>{
+  // set ready flag in lobby ready object
+  await update(ref(db, "lobbies/" + lobbyCode + "/ready"), { [username]: true });
+  readyToggle.disabled = true;
+  lobbyMsg.textContent = "Je staat klaar — wacht op de ander.";
 });
 </script>
 </body>
