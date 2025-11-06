@@ -1,0 +1,57 @@
+body {
+  background: linear-gradient(120deg, #003366, #006699);
+  font-family: 'Poppins', sans-serif;
+  color: white;
+  text-align: center;
+  margin: 0;
+}
+
+#gameContainer {
+  display: flex;
+  justify-content: space-around;
+  margin-top: 30px;
+  gap: 30px;
+}
+
+.board {
+  display: grid;
+  gap: 3px;
+  background: rgba(255,255,255,0.1);
+  border-radius: 12px;
+  padding: 10px;
+}
+
+.cell {
+  width: 30px;
+  height: 30px;
+  background: #1a75ff;
+  border-radius: 4px;
+  transition: background 0.3s;
+}
+
+.cell.miss {
+  background: #66ccff;
+  content: "🌊";
+}
+
+.cell.hit {
+  background: #ff4444;
+  content: "🔥";
+}
+
+.cell.sunk {
+  background: #000;
+  content: "💀";
+}
+
+#turnPopup {
+  position: fixed;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0,0,0,0.7);
+  padding: 10px 25px;
+  border-radius: 10px;
+  font-size: 1.3em;
+  box-shadow: 0 0 10px black;
+}
