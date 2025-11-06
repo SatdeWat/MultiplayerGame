@@ -1,69 +1,56 @@
-<!-- lobby.html -->
-<!doctype html>
+<!DOCTYPE html>
 <html lang="nl">
 <head>
-  <meta charset="utf-8">
-  <title>Lobby</title>
-  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta charset="UTF-8">
+  <title>Lobby aanmaken</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <div class="container">
-    <div class="header">
-      <div>
-        <div class="title">Lobby</div>
-        <div style="color:rgba(232,246,255,0.7)">Wacht op tweede speler — lobby details hieronder</div>
-      </div>
-      <div class="flex">
-        <div id="playerLabel" style="font-weight:800;color:var(--accent)"></div>
-        <button id="btnBack" class="btn ghost small">Home</button>
-      </div>
-    </div>
+  <div class="container center">
+    <h2>Kies gamemode & bordgrootte</h2>
+    <select id="mode">
+      <option value="classic">Classic</option>
+      <option value="streak">Streak</option>
+      <option value="power">Power</option>
+    </select>
 
-    <div class="panel">
-      <div style="display:flex;justify-content:space-between;align-items:center">
-        <div>
-          <div style="font-weight:900;font-size:20px">Lobby code: <span id="lobbyCodeShow" style="color:var(--accent2)"></span></div>
-          <div id="lobbyInfo" style="color:rgba(232,246,255,0.7)"></div>
-        </div>
-        <div style="text-align:right">
-          <div id="playersList"></div>
-          <div id="statusLabel" style="margin-top:8px;color:var(--accent)"></div>
-        </div>
-      </div>
-    </div>
+    <select id="boardSize">
+      <option value="10">10x10 (3 schepen)</option>
+      <option value="15">15x15 (4 schepen)</option>
+      <option value="20">20x20 (6 schepen)</option>
+    </select>
+
+    <button id="createLobby">Maak Lobby</button>
+    <p id="lobbyCodeDisplay"></p>
   </div>
 
   <script type="module">
-    import { db, dbRef, dbGet, dbOnValue, dbSet } from './firebase.js';
+    import { db, ref, set, onValue } from "./firebase.js";
 
-    const player = localStorage.getItem('player');
-    const lobbyCode = localStorage.getItem('lobbyCode');
-    if(!lobbyCode) { alert('Geen lobby gevonden'); location.href='index.html'; }
-    document.getElementById('playerLabel').textContent = player || 'Gast';
-    document.getElementById('lobbyCodeShow').textContent = lobbyCode;
+    const username = localStorage.getItem("username");
 
-    document.getElementById('btnBack').addEventListener('click', ()=> location.href='index.html');
+    document.getElementById("createLobby").onclick = async () => {
+      const code = Math.floor(1000 + Math.random()*9000);
+      const mode = document.getElementById("mode").value;
+      const size = parseInt(document.getElementById("boardSize").value);
 
-    const ref = dbRef(db, 'lobbies/' + lobbyCode);
-    dbOnValue(ref, (snap)=>{
-      if(!snap.exists()) return;
-      const data = snap.val();
-      lobbyInfo.textContent = `Mode: ${data.mode} · Bord: ${data.size}×${data.size} · Schepen: ${data.shipSet ? data.shipSet.join(',') : 'n.v.t.'}`;
-      const players = data.players || {};
-      playersList.innerHTML = `<div><strong>Host:</strong> ${players.host || '-'}</div><div><strong>Guest:</strong> ${players.guest || '-'}</div>`;
-      statusLabel.textContent = data.status || 'waiting';
-      // if both players present -> send both to place-ships
-      if(players.host && players.guest){
-        // ensure both know the lobbyCode (already set in localStorage)
-        // set status ready -> players will be redirected to place-ships
-        if(data.status === 'waiting' || data.status === 'ready') {
-          dbSet(dbRef(db, `lobbies/${lobbyCode}/status`), 'players_ready');
+      await set(ref(db, "lobbies/" + code), {
+        host: username,
+        guest: "",
+        mode: mode,
+        size: size,
+        status: "waiting"
+      });
+
+      localStorage.setItem("lobbyCode", code);
+      document.getElementById("lobbyCodeDisplay").innerHTML = "🎮 Lobby Code: <b>" + code + "</b><br>Wachten op speler...";
+
+      onValue(ref(db, "lobbies/" + code), (snap) => {
+        if (snap.val().guest && snap.val().status === "waiting") {
+          window.location.href = "game.html";
         }
-        // redirect after short delay
-        setTimeout(()=> location.href='place-ships.html', 800);
-      }
-    });
+      });
+    };
   </script>
 </body>
 </html>
