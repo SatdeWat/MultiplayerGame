@@ -1,34 +1,101 @@
 <!DOCTYPE html>
 <html lang="nl">
 <head>
-  <meta charset="UTF-8">
-  <title>Home - Zeeslag</title>
-  <link rel="stylesheet" href="style.css">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Zeeslag - Home</title>
+<link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <div class="container center">
-    <h1>Welkom, <span id="playerName"></span> ⚓</h1>
-    <button onclick="location.href='lobby.html'">Maak Lobby</button>
-    <button onclick="joinLobby()">Join Lobby</button>
-    <button onclick="location.href='leaderboard.html'">🏆 Leaderboard</button>
-    <button class="secondary" onclick="logout()">Logout</button>
+<div class="container">
+  <h1>⚓ Zeeslag ⚓</h1>
+  <p>Welkom, <span id="userDisplay"></span></p>
+  
+  <button id="createLobbyBtn">Maak lobby</button>
+  <div id="gamemodeSelection" style="display:none;">
+    <h3>Kies gamemode:</h3>
+    <button class="modeBtn" data-size="10" data-ships="3">Classic 10x10 - 3 schepen</button>
+    <button class="modeBtn" data-size="15" data-ships="4">Streak 15x15 - 4 schepen</button>
+    <button class="modeBtn" data-size="20" data-ships="6">Power 20x20 - 6 schepen</button>
+    <button id="backBtn" class="secondary">Terug</button>
   </div>
 
-  <script>
-    document.getElementById("playerName").innerText = localStorage.getItem("username");
+  <div id="joinSection">
+    <input type="text" id="joinCode" placeholder="Lobbycode invullen">
+    <button id="joinLobby">Join lobby</button>
+  </div>
 
-    function joinLobby() {
-      const code = prompt("Voer de lobby code in:");
-      if (code) {
-        localStorage.setItem("lobbyCode", code);
-        location.href = "game.html";
-      }
-    }
+  <button id="logoutBtn" class="secondary">Logout</button>
+</div>
 
-    function logout() {
-      localStorage.clear();
-      location.href = "index.html";
-    }
-  </script>
+<script type="module">
+import { db, ref, set, update, get } from "./firebase.js";
+
+const username = localStorage.getItem("username");
+if(!username) window.location.href="index.html";
+document.getElementById("userDisplay").innerText=username;
+
+const createLobbyBtn=document.getElementById("createLobbyBtn");
+const gamemodeSelection=document.getElementById("gamemodeSelection");
+const modeBtns=document.querySelectorAll(".modeBtn");
+const joinLobbyBtn=document.getElementById("joinLobby");
+const joinCodeInput=document.getElementById("joinCode");
+const logoutBtn=document.getElementById("logoutBtn");
+const backBtn=document.getElementById("backBtn");
+
+// Maak lobby knop
+createLobbyBtn.addEventListener("click", ()=> {
+  gamemodeSelection.style.display="block";
+  document.getElementById("joinSection").style.display="none";
+  createLobbyBtn.style.display="none";
+});
+
+// Terug knop
+backBtn.addEventListener("click", ()=> {
+  gamemodeSelection.style.display="none";
+  document.getElementById("joinSection").style.display="block";
+  createLobbyBtn.style.display="block";
+});
+
+// Gamemode kiezen
+modeBtns.forEach(btn=>{
+  btn.addEventListener("click", async ()=>{
+    const size=parseInt(btn.dataset.size);
+    const ships=parseInt(btn.dataset.ships);
+    const lobbyCode=Math.floor(1000+Math.random()*9000).toString();
+
+    await set(ref(db,"lobbies/"+lobbyCode),{
+      host:username,
+      guest:"",
+      size:size,
+      ships:ships,
+      gameStarted:false
+    });
+
+    localStorage.setItem("lobbyCode",lobbyCode);
+    window.location.href="game.html";
+  });
+});
+
+// Join lobby
+joinLobbyBtn.addEventListener("click", async ()=>{
+  const code=joinCodeInput.value.trim();
+  if(!code) return alert("Vul een lobbycode in!");
+  const snap=await get(ref(db,"lobbies/"+code));
+  if(!snap.exists()) return alert("Lobby niet gevonden!");
+  const data=snap.val();
+  if(data.guest && data.guest!="") return alert("Lobby is vol!");
+  await update(ref(db,"lobbies/"+code),{guest:username});
+  localStorage.setItem("lobbyCode",code);
+  window.location.href="game.html";
+});
+
+// Logout
+logoutBtn.addEventListener("click",()=>{
+  localStorage.removeItem("username");
+  localStorage.removeItem("lobbyCode");
+  window.location.href="index.html";
+});
+</script>
 </body>
 </html>
