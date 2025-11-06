@@ -1,0 +1,58 @@
+<!-- login.html -->
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <title>Login / Register</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="container">
+    <div class="panel">
+      <div style="font-size:18px;font-weight:800">Login / Registreren</div>
+      <div class="flex" style="margin-top:10px">
+        <input id="username" placeholder="Gebruikersnaam (geen spaties)" class="select">
+        <input id="code" placeholder="Pincode" type="password" class="select">
+      </div>
+      <div class="flex" style="margin-top:10px">
+        <button id="btnRegister" class="btn small">Registreren</button>
+        <button id="btnLogin" class="btn small">Inloggen</button>
+        <button id="btnBack" class="btn ghost small">Terug</button>
+      </div>
+      <div id="msg" style="margin-top:10px;color:var(--accent2)"></div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { db, dbRef, dbGet, dbSet } from './firebase.js';
+    const u = document.getElementById('username'), p = document.getElementById('code'), msg = document.getElementById('msg');
+    document.getElementById('btnBack').addEventListener('click', ()=> location.href='index.html');
+
+    document.getElementById('btnRegister').addEventListener('click', async ()=>{
+      const name = u.value.trim();
+      const pin = p.value.trim();
+      if(!name || name.includes(' ')) return msg.textContent='Kies geldige gebruikersnaam zonder spaties';
+      if(!pin || pin.length<4) return msg.textContent='Pincode minstens 4 tekens';
+      const snap = await dbGet(dbRef(db, 'users/' + name));
+      if(snap.exists()) return msg.textContent='Gebruikersnaam bestaat al';
+      await dbSet(dbRef(db, 'users/' + name), { username: name, code: pin });
+      localStorage.setItem('player', name);
+      msg.textContent = 'Geregistreerd! Je wordt doorgestuurd...';
+      setTimeout(()=> location.href='index.html', 800);
+    });
+
+    document.getElementById('btnLogin').addEventListener('click', async ()=>{
+      const name = u.value.trim();
+      const pin = p.value.trim();
+      if(!name) return msg.textContent='Vul gebruikersnaam';
+      const snap = await dbGet(dbRef(db, 'users/' + name));
+      if(!snap.exists()) return msg.textContent='Gebruiker niet gevonden';
+      if(snap.val().code !== pin) return msg.textContent='Foute pincode';
+      localStorage.setItem('player', name);
+      msg.textContent = 'Ingelogd! Doorsturen...';
+      setTimeout(()=> location.href='index.html', 600);
+    });
+  </script>
+</body>
+</html>
