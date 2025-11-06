@@ -9,14 +9,17 @@
 <body>
 <div class="container">
   <h1>⚓ Zeeslag ⚓</h1>
-
   <div id="turnInfo">Wachten op tegenstander...</div>
+  <div id="readyStatus">Jij klaar: ❌ | Tegenstander klaar: ❌</div>
   <div id="gameMessage">Plaats je schepen</div>
 
   <div style="display:flex; justify-content:center; gap:50px; flex-wrap:wrap;">
     <div>
       <h3>Jouw Bord</h3>
       <div id="myBoard"></div>
+      <div>
+        <button id="rotateBtn">Horizontaal/Verticaal</button>
+      </div>
       <button id="readyBtn">Klaar</button>
     </div>
     <div>
