@@ -1,36 +1,35 @@
 <!DOCTYPE html>
 <html lang="nl">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Zeeslag - Spel</title>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Zeeslag - Game</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <div class="container">
-  <h1>⚓ Zeeslag - Spel ⚓</h1>
+  <div class="turn-popup" id="turnPopup" style="display:none">Aan de beurt: <strong id="turnPlayer"></strong></div>
 
-  <div id="lobbyScreen">
-    <h3>Lobby Code: <span id="lobbyCodeDisplay"></span></h3>
-    <p>Jij: <span id="playerName"></span> ❌</p>
-    <p>Tegenstander: <span id="opponentName">Wachten...</span> ❌</p>
-    <button id="readyBtn">Klaar</button>
-  </div>
+  <h1>⚓ Spel</h1>
+  <p id="gameNote" class="msg">Plaats je schepen (1 schip van 5, 1 van 4, 1 van 3). Gebruik Rotate om richting te wisselen.</p>
 
-  <div id="gameScreen" style="display:none;">
-    <p id="gameMessage"></p>
-    <p id="turnInfo"></p>
-    <div class="boards">
-      <div>
-        <h3>Jouw Bord</h3>
-        <div id="myBoard"></div>
-        <button id="rotateBtn">Rotate</button>
-      </div>
-      <div>
-        <h3>Tegenstander Bord</h3>
-        <div id="enemyBoard"></div>
+  <div class="boards">
+    <div class="board-card">
+      <div class="board-title">Jouw Bord</div>
+      <div id="myBoard" class="board-grid"></div>
+      <div style="margin-top:8px;">
+        <button id="rotateBtn">Rotate (Horiz/Vert)</button>
       </div>
     </div>
+
+    <div class="board-card">
+      <div class="board-title">Tegenstander</div>
+      <div id="enemyBoard" class="board-grid"></div>
+    </div>
+  </div>
+
+  <div style="text-align:center; margin-top:12px;">
+    <button id="toHome" class="secondary">Terug naar Home</button>
   </div>
 </div>
 
