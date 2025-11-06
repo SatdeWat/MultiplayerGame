@@ -1,19 +1,17 @@
 // firebase.js
-// ES module — importeer vanuit andere modules: import { db, ref, get, set, onValue, push, update, remove } from './firebase.js'
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
 import {
   getDatabase,
   ref as dbRef,
-  set as dbSet,
   get as dbGet,
+  set as dbSet,
   onValue as dbOnValue,
   push as dbPush,
   update as dbUpdate,
-  remove as dbRemove,
-  child as dbChild,
+  remove as dbRemove
 } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
-// --- jouw Firebase config (gekopieerd uit je bericht) ---
+// --- jouw Firebase config (zoals door jou gegeven) ---
 const firebaseConfig = {
   apiKey: "AIzaSyCdI588pB7GMPJcjDJTHLAWjOmADixFnvw",
   authDomain: "zeeslag-game.firebaseapp.com",
@@ -27,5 +25,4 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 
-// Exporteer wat we nodig hebben
-export { db, dbRef, dbSet, dbGet, dbOnValue, dbPush, dbUpdate, dbRemove, dbChild };
+export { db, dbRef, dbGet, dbSet, dbOnValue, dbPush, dbUpdate, dbRemove };
