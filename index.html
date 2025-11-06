@@ -1,47 +1,56 @@
 <!DOCTYPE html>
 <html lang="nl">
 <head>
-  <meta charset="UTF-8" />
-  <title>Zeeslag - Inloggen</title>
-  <link rel="stylesheet" href="style.css">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Zeeslag - Login</title>
+<link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <div class="container center">
-    <h1>⚓ Zeeslag Online ⚓</h1>
-    <input id="username" placeholder="Gebruikersnaam">
-    <input id="pincode" type="number" placeholder="Pincode (bijv. 1234)">
-    <button id="loginBtn">Login / Registreer</button>
-    <button id="guestBtn" class="secondary">Speel als gast</button>
+<div class="login-container">
+  <h1>⚓ Zeeslag ⚓</h1>
+  <input type="text" id="username" placeholder="Gebruikersnaam">
+  <input type="password" id="pincode" placeholder="Pincode (min. 4 cijfers)">
+  <div class="button-group">
+    <button id="loginBtn">Inloggen</button>
+    <button id="registerBtn" class="secondary">Registreren</button>
   </div>
+  <p id="message"></p>
+</div>
 
-  <script type="module">
-    import { db, ref, get, set, update } from "./firebase.js";
+<script type="module">
+import { db, ref, get, set } from "./firebase.js";
 
-    document.getElementById('loginBtn').onclick = async () => {
-      const name = username.value.trim();
-      const pin = pincode.value.trim();
-      if (!name || !pin) return alert("Vul alles in!");
+const usernameInput = document.getElementById("username");
+const pincodeInput = document.getElementById("pincode");
+const loginBtn = document.getElementById("loginBtn");
+const registerBtn = document.getElementById("registerBtn");
+const message = document.getElementById("message");
 
-      const snap = await get(ref(db, "users/" + name));
-      if (snap.exists() && snap.val().pincode != pin) {
-        alert("Foute pincode!");
-        return;
-      }
+// Registreren
+registerBtn.addEventListener("click", async () => {
+  const username = usernameInput.value.trim();
+  const pincode = pincodeInput.value.trim();
+  if (!username || !pincode || pincode.length < 4) { message.textContent="Vul een geldige gebruikersnaam en pincode in!"; return; }
+  const snapshot = await get(ref(db, "users/" + username));
+  if (snapshot.exists()) { message.textContent="Gebruiker bestaat al!"; return; }
+  await set(ref(db, "users/" + username), { pincode, wins:0, games:0 });
+  message.style.color="lightgreen";
+  message.textContent="Registratie gelukt! Je kunt nu inloggen.";
+});
 
-      await set(ref(db, "users/" + name), {
-        pincode: pin,
-        wins: snap.exists() ? snap.val().wins || 0 : 0,
-        games: snap.exists() ? snap.val().games || 0 : 0
-      });
-
-      localStorage.setItem("username", name);
-      window.location.href = "home.html";
-    };
-
-    guestBtn.onclick = () => {
-      localStorage.setItem("username", "Gast" + Math.floor(Math.random()*1000));
-      window.location.href = "home.html";
-    };
-  </script>
+// Inloggen
+loginBtn.addEventListener("click", async () => {
+  const username = usernameInput.value.trim();
+  const pincode = pincodeInput.value.trim();
+  if (!username || !pincode) { message.textContent="Vul je gegevens in!"; return; }
+  const snapshot = await get(ref(db, "users/" + username));
+  if (!snapshot.exists()) { message.textContent="Gebruiker niet gevonden!"; return; }
+  if (snapshot.val().pincode === pincode) {
+    localStorage.setItem("username", username);
+    window.location.href = "home.html";
+  } else { message.textContent="❌ Onjuiste pincode!"; }
+});
+</script>
 </body>
 </html>
