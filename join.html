@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Zeeslag - Join Lobby</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="container">
+  <h1>⚓ Join Lobby ⚓</h1>
+  <input type="text" id="joinCodeInput" placeholder="Lobby code invullen">
+  <button id="joinBtn">Join</button>
+  <p id="message"></p>
+</div>
+
+<script type="module">
+import { db, ref, get, update } from "./firebase.js";
+
+const username = localStorage.getItem("username");
+if(!username) window.location.href="index.html";
+
+const joinCodeInput = document.getElementById("joinCodeInput");
+const joinBtn = document.getElementById("joinBtn");
+const message = document.getElementById("message");
+
+joinBtn.addEventListener("click", async ()=>{
+  const code = joinCodeInput.value.trim();
+  if(!code) return message.textContent="Vul een lobby code in!";
+  const lobbyRef = ref(db,"lobbies/"+code);
+  const snap = await get(lobbyRef);
+  if(!snap.exists()) return message.textContent="Lobby niet gevonden!";
+  const data = snap.val();
+  if(data.guest && data.guest!=="") return message.textContent="Lobby is vol!";
+
+  await update(lobbyRef,{guest:username});
+  localStorage.setItem("lobbyCode",code);
+  window.location.href="lobby.html";
+});
+</script>
+</body>
+</html>
