@@ -7,14 +7,12 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<div class="container">
+<div class="login-container">
   <h1>⚓ Zeeslag ⚓</h1>
-
   <input type="text" id="usernameInput" placeholder="Gebruikersnaam">
   <input type="password" id="passwordInput" placeholder="Wachtwoord">
   <button id="loginBtn">Login</button>
   <button id="registerBtn">Register</button>
-  <br>
   <button id="guestBtn">Speel als gast</button>
   <p id="loginMessage"></p>
 </div>
@@ -29,7 +27,7 @@ const registerBtn = document.getElementById("registerBtn");
 const guestBtn = document.getElementById("guestBtn");
 const loginMessage = document.getElementById("loginMessage");
 
-// --- Login ---
+// Login
 loginBtn.addEventListener("click", async ()=>{
   const username = usernameInput.value.trim();
   const password = passwordInput.value.trim();
@@ -46,7 +44,7 @@ loginBtn.addEventListener("click", async ()=>{
   window.location.href="home.html";
 });
 
-// --- Register ---
+// Register
 registerBtn.addEventListener("click", async ()=>{
   const username = usernameInput.value.trim();
   const password = passwordInput.value.trim();
@@ -62,7 +60,7 @@ registerBtn.addEventListener("click", async ()=>{
   window.location.href="home.html";
 });
 
-// --- Speel als gast ---
+// Speel als gast
 guestBtn.addEventListener("click", ()=>{
   const guestName = prompt("Vul een tijdelijke naam in:");
   if(!guestName) return;
