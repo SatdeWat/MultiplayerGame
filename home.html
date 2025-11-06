@@ -1,149 +1,111 @@
 <!DOCTYPE html>
 <html lang="nl">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>Zeeslag - Home</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <div class="container">
   <h1>⚓ Zeeslag - Home ⚓</h1>
-  <button id="createLobbyBtn">Maak Lobby</button>
-  <button id="joinLobbyBtn">Join Lobby</button>
-  <button id="leaderboardBtn">Leaderboard</button>
-  <button id="logoutBtn">Logout</button>
 
-  <div id="createLobbySection" style="display:none;">
+  <div class="controls">
+    <button id="createLobbyBtn">Maak Lobby</button>
+    <button id="joinLobbyBtn">Join Lobby</button>
+    <button id="leaderboardBtn">Leaderboard</button>
+    <button id="logoutBtn" class="secondary">Logout</button>
+  </div>
+
+  <div id="createLobbySection" style="display:none; margin-top:16px;">
     <h3>Kies gamemode</h3>
-    <button class="modeBtn" data-mode="classic">Classic</button>
-    <button class="modeBtn" data-mode="streak">Streak</button>
-    <button class="modeBtn" data-mode="power">Power</button>
-    <div id="sizeSelection"></div>
+    <div class="mode-grid">
+      <button class="modeBtn" data-mode="classic">Classic</button>
+      <button class="modeBtn" data-mode="streak">Streak</button>
+      <button class="modeBtn" data-mode="power">Power</button>
+    </div>
+
+    <div id="sizeSelection" style="margin-top:12px;"></div>
   </div>
 
-  <div id="joinLobbySection" style="display:none;">
-    <h3>Voer Lobby Code in</h3>
-    <input type="text" id="lobbyCodeInput" placeholder="Lobby Code">
-    <button id="joinLobbyConfirmBtn">Join</button>
+  <div id="joinLobbySection" style="display:none; margin-top:12px;">
+    <input id="lobbyCodeInput" placeholder="Lobby code (bv. AB12C)" />
+    <div style="margin-top:8px;">
+      <button id="joinConfirmBtn">Join</button>
+    </div>
+    <p class="msg">Vul de code van je vriend in om te joinen.</p>
   </div>
 
-  <div id="lobbyScreen" style="display:none;">
-    <h3>Lobby Code: <span id="lobbyCodeDisplay"></span></h3>
-    <p>Jij: <span id="playerName"></span> ❌</p>
-    <p>Tegenstander: <span id="opponentName">Wachten...</span> ❌</p>
-    <button id="readyBtn">Klaar</button>
-  </div>
 </div>
 
 <script type="module">
-import { db, ref, set, get, update, onValue } from "./firebase.js";
+import { db, dbRef as ref, dbSet as set, dbGet as get, dbUpdate as update, dbOnValue as onValue } from "./firebase.js";
 
 const username = localStorage.getItem("username");
-const isGuest = localStorage.getItem("isGuest") === "true";
 if(!username) window.location.href="index.html";
 
 const createLobbyBtn = document.getElementById("createLobbyBtn");
 const joinLobbyBtn = document.getElementById("joinLobbyBtn");
+const leaderboardBtn = document.getElementById("leaderboardBtn");
 const logoutBtn = document.getElementById("logoutBtn");
-
 const createLobbySection = document.getElementById("createLobbySection");
 const joinLobbySection = document.getElementById("joinLobbySection");
 const sizeSelection = document.getElementById("sizeSelection");
-const lobbyScreen = document.getElementById("lobbyScreen");
-const lobbyCodeDisplay = document.getElementById("lobbyCodeDisplay");
-const playerNameSpan = document.getElementById("playerName");
-const opponentNameSpan = document.getElementById("opponentName");
-
 const lobbyCodeInput = document.getElementById("lobbyCodeInput");
-const joinLobbyConfirmBtn = document.getElementById("joinLobbyConfirmBtn");
-const readyBtn = document.getElementById("readyBtn");
+const joinConfirmBtn = document.getElementById("joinConfirmBtn");
 
-// Knoppen
 createLobbyBtn.addEventListener("click", ()=>{
-  createLobbySection.style.display="block";
-  joinLobbySection.style.display="none";
+  createLobbySection.style.display = "block";
+  joinLobbySection.style.display = "none";
 });
 joinLobbyBtn.addEventListener("click", ()=>{
-  joinLobbySection.style.display="block";
-  createLobbySection.style.display="none";
+  createLobbySection.style.display = "none";
+  joinLobbySection.style.display = "block";
 });
 logoutBtn.addEventListener("click", ()=>{
   localStorage.clear();
   window.location.href="index.html";
 });
+leaderboardBtn.addEventListener("click", ()=> location.href="leaderboard.html");
 
-// Gamemode select
 document.querySelectorAll(".modeBtn").forEach(btn=>{
   btn.addEventListener("click", ()=>{
     const mode = btn.dataset.mode;
-    sizeSelection.innerHTML="";
-    const sizes = [
-      {size:10,ships:3},
-      {size:15,ships:4},
-      {size:20,ships:6}
-    ];
+    sizeSelection.innerHTML = "";
+    const sizes = [{size:10,ships:3},{size:15,ships:4},{size:20,ships:6}];
     sizes.forEach(s=>{
-      const b=document.createElement("button");
-      b.textContent=`${s.size}x${s.size} (${s.ships} schepen)`;
+      const b = document.createElement("button");
+      b.textContent = `${s.size}x${s.size} — ${s.ships} schepen`;
+      b.className = "secondary";
+      b.style.margin = "6px";
       b.addEventListener("click", async ()=>{
-        const code=Math.random().toString(36).substring(2,7).toUpperCase();
-        await set(ref(db,"lobbies/"+code),{
+        const code = Math.random().toString(36).substring(2,7).toUpperCase();
+        await set(ref(db, "lobbies/" + code), {
           host: username,
-          guest:"",
-          mode:mode,
-          size:s.size,
-          ships:s.ships,
-          ready:{}
+          guest: "",
+          mode: mode,
+          size: s.size,
+          ships: s.ships,
+          ready: {}
         });
-        localStorage.setItem("lobbyCode",code);
-        showLobbyScreen(code);
+        localStorage.setItem("lobbyCode", code);
+        window.location.href = "lobby.html";
       });
       sizeSelection.appendChild(b);
     });
   });
 });
 
-// Join Lobby
-joinLobbyConfirmBtn.addEventListener("click", async ()=>{
-  const code = lobbyCodeInput.value.trim().toUpperCase();
-  const lobbyRef = ref(db,"lobbies/"+code);
-  const snap = await get(lobbyRef);
-  if(!snap.exists()){ alert("Lobby niet gevonden!"); return; }
+joinConfirmBtn.addEventListener("click", async ()=>{
+  const code = (lobbyCodeInput.value || "").trim().toUpperCase();
+  if(!code) return alert("Voer een lobbycode in.");
+  const snap = await get(ref(db, "lobbies/" + code));
+  if(!snap.exists()) return alert("Lobby niet gevonden.");
   const data = snap.val();
-  if(data.guest){ alert("Lobby vol!"); return; }
-  await update(lobbyRef, {guest: username});
-  localStorage.setItem("lobbyCode",code);
-  showLobbyScreen(code);
-});
-
-// Lobby scherm tonen
-function showLobbyScreen(code){
-  createLobbySection.style.display="none";
-  joinLobbySection.style.display="none";
-  lobbyScreen.style.display="block";
-  lobbyCodeDisplay.textContent=code;
-  playerNameSpan.textContent=username;
-
-  const lobbyRef = ref(db,"lobbies/"+code);
-  onValue(lobbyRef, snap=>{
-    const data = snap.val();
-    const opp = (data.host===username)?data.guest:data.host;
-    opponentNameSpan.textContent = (opp || "Wachten...") + ((data.ready?.[opp])?" ✅":" ❌");
-    playerNameSpan.textContent=username + (data.ready?.[username]?" ✅":" ❌");
-
-    if(data.ready?.[username] && data.ready?.[opp]){
-      window.location.href="game.html";
-    }
-  });
-}
-
-// Klaar knop
-readyBtn.addEventListener("click", async ()=>{
-  const code = localStorage.getItem("lobbyCode");
-  const lobbyRef = ref(db,"lobbies/"+code+"/ready");
-  await update(lobbyRef, {[username]:true});
-  readyBtn.disabled=true;
+  if(data.guest) return alert("Lobby is al vol.");
+  await update(ref(db,"lobbies/"+code), { guest: username });
+  localStorage.setItem("lobbyCode", code);
+  window.location.href = "lobby.html";
 });
 </script>
 </body>
