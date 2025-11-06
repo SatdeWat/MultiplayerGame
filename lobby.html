@@ -3,94 +3,67 @@
 <html lang="nl">
 <head>
   <meta charset="utf-8">
-  <title>Zeeslag — Lobby</title>
+  <title>Lobby</title>
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <div class="container">
     <div class="header">
-      <h2>Lobby</h2>
-      <div><span id="playerName"></span> <button id="btnLogout" class="small">Logout</button></div>
+      <div>
+        <div class="title">Lobby</div>
+        <div style="color:rgba(232,246,255,0.7)">Wacht op tweede speler — lobby details hieronder</div>
+      </div>
+      <div class="flex">
+        <div id="playerLabel" style="font-weight:800;color:var(--accent)"></div>
+        <button id="btnBack" class="btn ghost small">Home</button>
+      </div>
     </div>
 
     <div class="panel">
-      <div class="title">Maak of join een lobby</div>
-      <div class="flex">
-        <select id="modeSelect">
-          <option value="classic">Classic</option>
-          <option value="streak">Streak</option>
-          <option value="power">Power</option>
-        </select>
-        <button id="btnCreate" class="small">Maak Lobby</button>
-        <input id="joinCode" placeholder="Lobby code">
-        <button id="btnJoin" class="small">Join Lobby</button>
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div>
+          <div style="font-weight:900;font-size:20px">Lobby code: <span id="lobbyCodeShow" style="color:var(--accent2)"></span></div>
+          <div id="lobbyInfo" style="color:rgba(232,246,255,0.7)"></div>
+        </div>
+        <div style="text-align:right">
+          <div id="playersList"></div>
+          <div id="statusLabel" style="margin-top:8px;color:var(--accent)"></div>
+        </div>
       </div>
-      <p id="status" style="margin-top:8px;color:var(--muted)"></p>
     </div>
   </div>
 
   <script type="module">
-    import { db, dbRef, dbSet, dbGet, dbOnValue, dbUpdate } from './firebase.js';
+    import { db, dbRef, dbGet, dbOnValue, dbSet } from './firebase.js';
 
     const player = localStorage.getItem('player');
-    if(!player) location.href = 'index.html';
-    document.getElementById('playerName').textContent = player;
+    const lobbyCode = localStorage.getItem('lobbyCode');
+    if(!lobbyCode) { alert('Geen lobby gevonden'); location.href='index.html'; }
+    document.getElementById('playerLabel').textContent = player || 'Gast';
+    document.getElementById('lobbyCodeShow').textContent = lobbyCode;
 
-    document.getElementById('btnLogout').addEventListener('click', ()=>{
-      localStorage.removeItem('player');
-      location.href='index.html';
-    });
+    document.getElementById('btnBack').addEventListener('click', ()=> location.href='index.html');
 
-    function makeCode(){ return Math.floor(1000 + Math.random()*9000).toString(); }
-
-    document.getElementById('btnCreate').addEventListener('click', async ()=>{
-      const mode = document.getElementById('modeSelect').value;
-      const code = makeCode();
-      const lobbyObj = {
-        players: { host: player },
-        status: 'waiting',
-        mode: mode,
-        created: Date.now()
-      };
-      await dbSet(dbRef(db, 'lobbies/' + code), lobbyObj);
-      localStorage.setItem('lobbyCode', code);
-      watchLobby(code);
-      document.getElementById('status').textContent = 'Lobby gemaakt: ' + code + ' — wacht op 2de speler...';
-    });
-
-    document.getElementById('btnJoin').addEventListener('click', async ()=>{
-      const code = document.getElementById('joinCode').value.trim();
-      if(!code) return document.getElementById('status').textContent = 'Vul lobby code.';
-      const snap = await dbGet(dbRef(db, 'lobbies/' + code));
-      if(!snap.exists()) return document.getElementById('status').textContent = 'Lobby niet gevonden.';
-      const val = snap.val();
-      if(val.players && val.players.guest) return document.getElementById('status').textContent = 'Lobby al vol.';
-      await dbSet(dbRef(db, 'lobbies/' + code + '/players/guest'), player);
-      await dbSet(dbRef(db, 'lobbies/' + code + '/status'), 'ready');
-      localStorage.setItem('lobbyCode', code);
-      watchLobby(code);
-      document.getElementById('status').textContent = 'Je joined lobby ' + code;
-    });
-
-    function watchLobby(code){
-      const ref = dbRef(db, 'lobbies/' + code);
-      dbOnValue(ref, (snap)=>{
-        if(!snap.exists()) return;
-        const l = snap.val();
-        if(l.players && l.players.host && l.players.guest){
-          document.getElementById('status').textContent = '2 spelers: ' + l.players.host + ' vs ' + l.players.guest;
-          // sturen naar place-ships
-          setTimeout(()=> location.href = 'place-ships.html', 700);
-        } else {
-          document.getElementById('status').textContent = 'Wachten op tweede speler...';
+    const ref = dbRef(db, 'lobbies/' + lobbyCode);
+    dbOnValue(ref, (snap)=>{
+      if(!snap.exists()) return;
+      const data = snap.val();
+      lobbyInfo.textContent = `Mode: ${data.mode} · Bord: ${data.size}×${data.size} · Schepen: ${data.shipSet ? data.shipSet.join(',') : 'n.v.t.'}`;
+      const players = data.players || {};
+      playersList.innerHTML = `<div><strong>Host:</strong> ${players.host || '-'}</div><div><strong>Guest:</strong> ${players.guest || '-'}</div>`;
+      statusLabel.textContent = data.status || 'waiting';
+      // if both players present -> send both to place-ships
+      if(players.host && players.guest){
+        // ensure both know the lobbyCode (already set in localStorage)
+        // set status ready -> players will be redirected to place-ships
+        if(data.status === 'waiting' || data.status === 'ready') {
+          dbSet(dbRef(db, `lobbies/${lobbyCode}/status`), 'players_ready');
         }
-      });
-    }
-
-    // als we al in een lobby zaten -> meteen watchen
-    const existing = localStorage.getItem('lobbyCode');
-    if(existing) watchLobby(existing);
+        // redirect after short delay
+        setTimeout(()=> location.href='place-ships.html', 800);
+      }
+    });
   </script>
 </body>
 </html>
