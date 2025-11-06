@@ -18,11 +18,9 @@ let phase = "placing"; // placing -> waiting -> playing
 let size = 10;
 let shipsCount = 3;
 
-// Firebase references
 const lobbyRef = ref(db, "lobbies/" + lobbyCode);
 const gameRef = ref(db, "games/" + lobbyCode);
 
-// --- Initialiseer ---
 async function init() {
   const snap = await get(lobbyRef);
   if (!snap.exists()) return alert("Lobby niet gevonden!");
@@ -31,17 +29,18 @@ async function init() {
   shipsCount = lobbyData.ships;
 
   createBoard(myBoardDiv, size, true, placeShip);
-  createBoard(enemyBoardDiv, size, false, null);
+  createBoard(enemyBoardDiv, size, false);
 
   gameMessage.textContent = `Plaats je ${shipsCount} schepen`;
 }
+
 init();
 
 // --- Maak bord ---
 function createBoard(boardDiv, size, clickable = false, clickHandler = null) {
   boardDiv.innerHTML = "";
-  boardDiv.style.gridTemplateColumns = `repeat(${size}, 30px)`;
-  boardDiv.style.gridTemplateRows = `repeat(${size}, 30px)`;
+  boardDiv.style.gridTemplateColumns = `repeat(${size}, 40px)`;
+  boardDiv.style.gridTemplateRows = `repeat(${size}, 40px)`;
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
       const cell = document.createElement("div");
@@ -64,14 +63,11 @@ function placeShip(x, y, cell) {
   myShips.push(key);
   cell.style.background = "#4caf50";
   cell.textContent = "🚢";
+
   if (myShips.length === shipsCount) {
     phase = "waiting";
     gameMessage.textContent = "Wachten op tegenstander...";
-    // Sla schepen op in DB
-    set(ref(db, `games/${lobbyCode}/${username}`), {
-      ships: myShips,
-      shots: []
-    });
+    set(ref(db, `games/${lobbyCode}/${username}`), { ships: myShips, shots: [] });
     checkBothReady();
   }
 }
@@ -80,7 +76,7 @@ function placeShip(x, y, cell) {
 function checkBothReady() {
   onValue(gameRef, snapshot => {
     const data = snapshot.val() || {};
-    const players = Object.keys(data);
+    const players = Object.keys(data).filter(p => p !== "turn");
     if (players.length === 2 && data[players[0]].ships && data[players[1]].ships) {
       startGame(players);
     }
@@ -91,16 +87,24 @@ function checkBothReady() {
 function startGame(players) {
   phase = "playing";
   const opponent = players.find(p => p !== username);
+
   createBoard(enemyBoardDiv, size, true, shoot);
 
-  // Random wie begint
-  onValue(gameRef, snapshot => {
-    const data = snapshot.val();
+  // Zet initiële beurt als niet aanwezig
+  get(gameRef).then(snapshot => {
+    const data = snapshot.val() || {};
     if (!data.turn) {
       const first = Math.random() < 0.5 ? username : opponent;
       update(gameRef, { turn: first });
     }
+  });
+
+  // Realtime updates
+  onValue(gameRef, snapshot => {
+    const data = snapshot.val();
+    if (!data) return;
     updateTurnDisplay(data.turn || username);
+
     renderBoards(data);
   });
 }
@@ -114,13 +118,12 @@ function updateTurnDisplay(turn) {
 // --- Schieten ---
 async function shoot(x, y) {
   if (!isMyTurn || phase !== "playing") return;
-  const cellKey = `${x},${y}`;
+  const key = `${x},${y}`;
   const shotsRef = ref(db, `games/${lobbyCode}/${username}/shots`);
   const snap = await get(shotsRef);
   const prevShots = snap.val() || {};
-  if (prevShots[cellKey]) return; // al geschoten
-
-  prevShots[cellKey] = true;
+  if (prevShots[key]) return; // al geschoten
+  prevShots[key] = true;
   await set(shotsRef, prevShots);
 
   // Wissel beurt
@@ -178,7 +181,6 @@ function checkWin(myData, enemyData) {
 
 // --- Einde spel: update leaderboard ---
 async function endGame(winner, loser) {
-  // Update wins/games
   const winnerRef = ref(db,"users/"+winner);
   const loserRef = ref(db,"users/"+loser);
 
