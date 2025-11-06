@@ -1,787 +1,284 @@
-// game.js — volledige game flow, no spamming popups
-// game.js — compleet: classic & power modes, ready flow, shot rules, sunk, powermove
-import { db } from "./firebase-config.js";
-import { loadLocalProfile, incrementWinsForUid } from "./app-auth.js";
-import {
-  ref, get, set, onValue, push, runTransaction, update
-} from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
-import { ref, get, set, onValue, update, push, runTransaction } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
+// game.js (module)
+import { db, dbRef, dbGet, dbOnValue, dbPush, dbUpdate } from './firebase.js';
 
-/* --------- Config & helpers --------- */
-const CANNON_URL = "https://cdn-icons-png.flaticon.com/512/3369/3369660.png";
-const SHOT_URL = "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRsonFTFUeLaut_val1poYgUuCph8s9N2FJBg&s";
-const $ = id => document.getElementById(id);
-const alpha = n => String.fromCharCode(65 + n);
-const cellName = (r,c) => `${alpha(r)}${c+1}`;
-const profile = loadLocalProfile();
+const player = localStorage.getItem('player');
+const code = localStorage.getItem('lobbyCode');
+const mode = document.body.dataset.mode || 'classic';
+if(!player || !code){ alert('Geen speler of lobby gevonden.'); location.href='index.html'; }
 
-// Safety: if no profile -> show message inline and stop (no popups)
-if (!profile) {
-  const status = $("status-msg");
-  if (status) status.textContent = "Je moet inloggen of als gast inloggen om te spelen.";
-  // stop executing game logic
-  throw new Error("No profile");
-}
-if (!profile) { $("status-msg") && ($("status-msg").textContent = "Log in of speel als gast."); throw "No profile"; }
+document.getElementById('me').textContent = player;
+document.getElementById('lobbyId').textContent = code;
 
-const qs = new URLSearchParams(location.search);
-const lobbyCode = qs.get("lobby");
-if (!lobbyCode) { $("status-msg").textContent = "Geen lobby code"; throw "No lobby code"; }
-if (!lobbyCode) { $("status-msg") && ($("status-msg").textContent = "Geen lobby code"); throw "No lobby"; }
+const gridSize = 15;
+const ownBoardEl = document.getElementById('ownBoard');
+const oppBoardEl = document.getElementById('oppBoard');
+const turnPopup = document.getElementById('turnPopup');
+const gameLog = document.getElementById('gameLog');
 
-const infoLobby = $("info-lobby"), infoPlayer = $("info-player"), infoTurn = $("info-turn");
-const boardMeEl = $("board-me"), boardOpEl = $("board-op");
-const shipListEl = $("ship-list");
-const btnRandom = $("btn-random"), btnReady = $("btn-ready"), btnRotate = $("btn-rotate");
-const readyBadgeMe = $("ready-badge-me"), readyBadgeOp = $("ready-badge-op");
-// UI elems
-const infoLobby = $("info-lobby"), infoPlayer = $("info-player"), infoTurn = $("info-turn"), infoPower = $("info-power");
-const boardMeEl = $("board-me"), boardOpEl = $("board-op"), shipListEl = $("ship-list");
-const btnRandom = $("btn-random"), btnRotate = $("btn-rotate"), btnReady = $("btn-ready"), btnPower = $("btn-power");
-const readyBadgeMe = $("ready-badge-me"), readyBadgeOp = $("ready-badge-op"), logEl = $("log");
-const overlay = $("overlay"), overlayContent = $("overlay-content"), overlayActions = $("overlay-actions");
-const logEl = $("log"), leaderboardEl = $("leaderboard");
+let role = null; // host / guest
+let opponentRole = null;
+let lobby = null;
+let ownCells = [];
+let ourShots = {};
+let oppShots = {};
+let turn = 'host';
+let finished = false;
 
-let gameId = null;
-let gamemode = "classic"; // 'classic' or 'power'
-let size = 10;
-let myId = profile.uid;
-let myBoard = {}, oppBoard = {};
-let shipSizes = [5,4,3,3,2];
-let placedShips = []; // {id, cells}
-let myBoard = {}, oppBoard = {}; // local caches
-let shipSizes = [5,4,3]; // default small set - will be overwritten per size selection
-let placedShips = [];
-let currentShipIndex = 0;
-let orientation = "H";
-
-/* UI logging */
-function log(msg){ const d=document.createElement("div"); d.textContent = `${new Date().toLocaleTimeString()} — ${msg}`; logEl.prepend(d); }
-
-/* overlay (non-blocking) */
-function showOverlay(msg, actionsHTML="") {
-  if (!overlay) return console.log("overlay:", msg);
-let orientation = 'H';
-let ready = false;
-let myTurn = false;
-let powerCount = 0; // number of powermoves available (power mode only)
-let opponentId = null;
-
-function log(msg){ const d = document.createElement('div'); d.textContent = `${new Date().toLocaleTimeString()} — ${msg}`; logEl.prepend(d); }
-function showOverlay(msg, actionsHTML = `<button id="overlay-close">OK</button>`) {
-  if (!overlay) return console.log(msg);
-overlayContent.innerHTML = msg;
-  overlayActions.innerHTML = actionsHTML || `<button id="overlay-close">OK</button>`;
-  overlay.classList.remove("hidden");
-  const close = document.getElementById("overlay-close");
-  if (close) close.onclick = () => overlay.classList.add("hidden");
-  overlayActions.innerHTML = actionsHTML;
-  overlay.classList.remove('hidden');
-  const btn = document.getElementById('overlay-close');
-  if (btn) btn.onclick = ()=> overlay.classList.add('hidden');
-}
-
-/* grid creation & rendering */
-// grid helpers
-function createGrid(el, n){
-  el.innerHTML = "";
-  el.classList.remove("cell-5","cell-10","cell-15");
-  el.innerHTML = '';
-  el.classList.remove('cell-5','cell-10','cell-15','cell-20');
-el.classList.add(`cell-${n}`);
-el.style.gridTemplateRows = `repeat(${n},1fr)`;
-  for (let r=0;r<n;r++){
-    for (let c=0;c<n;c++){
-      const tile = document.createElement("div");
-      tile.className = "tile sea";
-  for(let r=0;r<n;r++){
-    for(let c=0;c<n;c++){
-      const tile = document.createElement('div');
-      tile.className = 'tile sea';
-tile.dataset.r = r; tile.dataset.c = c; tile.dataset.cell = cellName(r,c);
-el.appendChild(tile);
-}
-}
-}
-
-function setSize(n){
-  size = n;
-  createGrid(boardMeEl,n);
-  createGrid(boardOpEl,n);
-  myBoard = {}; oppBoard = {};
-function setSizeAndMode(gm, s){
-  gamemode = gm;
-  size = s;
-  createGrid(boardMeEl, size);
-  createGrid(boardOpEl, size);
-placedShips = [];
-currentShipIndex = 0;
-  orientation = "H";
-  if (n>=15) shipSizes = [5,4,4,3,3,2];
-  else if (n>=10) shipSizes = [5,4,3,3,2];
-  else shipSizes = [3,2,2];
-  for (let r=0;r<size;r++) for (let c=0;c<size;c++) myBoard[cellName(r,c)] = "empty";
-  renderShipList(); renderBoards();
-  orientation = 'H';
-  myBoard = {}; oppBoard = {};
-  if (gamemode === 'power' && size === 20) {
-    // bigger ship set for large map
-    shipSizes = [5,4,4,3,3,2];
-  } else {
-    // normal: three ships sizes (as requested)
-    if (size <= 5) shipSizes = [3,2,2];
-    else shipSizes = [5,4,3];
+function makeGrid(container, clickable){
+  container.innerHTML = '';
+  const g = document.createElement('div');
+  g.className = 'board';
+  g.style.gridTemplateColumns = `repeat(${gridSize}, 30px)`;
+  for(let i=0;i<gridSize*gridSize;i++){
+    const c = document.createElement('div');
+    c.className = 'cell';
+    c.dataset.i = i;
+    if(clickable) c.addEventListener('click', ()=> onCellClick(i, c));
+    g.appendChild(c);
   }
-  for (let r=0;r<size;r++) for (let c=0;c<size;c++) myBoard[cellName(r,c)] = 'empty';
-  renderShipList();
-  renderBoards();
-  updateUI();
+  container.appendChild(g);
 }
 
-function renderBoards(){
-  Array.from(boardMeEl.children).forEach(tile=>{
-  if (boardMeEl) Array.from(boardMeEl.children).forEach(tile=>{
-const id = tile.dataset.cell;
-    tile.className = "tile sea";
-    tile.innerHTML = "";
-    if (myBoard[id] === "ship") tile.classList.add("ship");
-    if (myBoard[id] === "hit") { tile.classList.add("hit"); tile.innerHTML = "💥"; }
-    if (myBoard[id] === "miss") { tile.classList.add("miss"); tile.innerHTML = "🌊"; }
-    if (myBoard[id] === "sunk") { tile.classList.add("sunk"); tile.innerHTML = "☠️"; }
-    tile.className = 'tile sea';
-    tile.innerHTML = '';
-    if (myBoard[id] === 'ship') tile.classList.add('ship');
-    if (myBoard[id] === 'hit') { tile.classList.add('hit'); tile.innerHTML = '💥'; }
-    if (myBoard[id] === 'miss') { tile.classList.add('miss'); tile.innerHTML = '🌊'; }
-    if (myBoard[id] === 'sunk') { tile.classList.add('sunk'); tile.innerHTML = '☠️'; }
-});
-  Array.from(boardOpEl.children).forEach(tile=>{
-  if (boardOpEl) Array.from(boardOpEl.children).forEach(tile=>{
-const id = tile.dataset.cell;
-    tile.className = "tile sea";
-    tile.innerHTML = "";
-    if (oppBoard[id] === "hit") { tile.classList.add("hit"); tile.innerHTML = "🔥"; }
-    if (oppBoard[id] === "miss") { tile.classList.add("miss"); tile.innerHTML = "🌊"; }
-    if (oppBoard[id] === "sunk") { tile.classList.add("sunk"); tile.innerHTML = "☠️"; }
-    tile.className = 'tile sea'; tile.innerHTML = '';
-    if (oppBoard[id] === 'hit') { tile.classList.add('hit'); tile.innerHTML = '🔥'; }
-    if (oppBoard[id] === 'miss') { tile.classList.add('miss'); tile.innerHTML = '🌊'; }
-    if (oppBoard[id] === 'sunk') { tile.classList.add('sunk'); tile.innerHTML = '☠️'; }
-});
-}
+makeGrid(ownBoardEl, false);
+makeGrid(oppBoardEl, true);
 
-/* ship list */
-function renderShipList(){
-  shipListEl.innerHTML = "";
-  shipListEl.innerHTML = '';
-shipSizes.forEach((s,i)=>{
-    const pill = document.createElement("div");
-    pill.className = "ship-pill" + (i===currentShipIndex ? " active" : "");
-    pill.textContent = `Ship ${i+1} — ${s>0?s:"placed"}`;
-    pill.addEventListener("click", ()=>{ if (s>0) currentShipIndex = i; renderShipList(); });
-    const pill = document.createElement('div');
-    pill.className = 'ship-pill' + (i === currentShipIndex ? ' active' : '');
-    pill.textContent = `Ship ${i+1} — ${s>0 ? s : 'placed'}`;
-    pill.onclick = ()=> { if (s>0) currentShipIndex = i; renderShipList(); };
-shipListEl.appendChild(pill);
-});
-}
-
-/* placement utils */
-function canPlace(startR,startC,sizeShip,orient){
-function canPlace(r,c,s,orient){
-const coords = [];
-  for (let i=0;i<sizeShip;i++){
-    const r = startR + (orient==="V"?i:0);
-    const c = startC + (orient==="H"?i:0);
-    if (r<0 || r>=size || c<0 || c>=size) return null;
-    coords.push(cellName(r,c));
-  for (let i=0;i<s;i++){
-    const rr = r + (orient === 'V' ? i : 0);
-    const cc = c + (orient === 'H' ? i : 0);
-    if (rr < 0 || rr >= size || cc < 0 || cc >= size) return null;
-    coords.push(cellName(rr,cc));
-}
-  for (const cell of coords) if (myBoard[cell] === "ship") return null;
-  for (const k of coords) if (myBoard[k] === 'ship') return null;
-return coords;
-}
-
-function placeShipAt(cellId){
-const r = cellId.charCodeAt(0) - 65;
-const c = parseInt(cellId.slice(1),10) - 1;
-const s = shipSizes[currentShipIndex];
-  if (!s || s<=0) { log("Geen schip geselecteerd"); return; }
-  if (!s || s <= 0) { log('Geen schip geselecteerd'); return; }
-const coords = canPlace(r,c,s,orientation);
-  if (!coords){ log("Kan hier niet plaatsen"); return; }
-  coords.forEach(k => myBoard[k] = "ship");
-  placedShips.push({ id: 'ship_' + Date.now() + '_' + Math.floor(Math.random()*9999), cells: coords });
-  if (!coords) { log('Kan hier niet plaatsen'); return; }
-  coords.forEach(k => myBoard[k] = 'ship');
-  placedShips.push({ id: 'ship_' + Date.now() + '_' + Math.floor(Math.random()*9999), cells: coords, size: s });
-shipSizes[currentShipIndex] = 0;
-while (currentShipIndex < shipSizes.length && shipSizes[currentShipIndex] === 0) currentShipIndex++;
-renderShipList(); renderBoards();
-}
-
-function randomPlaceAll(){
-  for (const k in myBoard) myBoard[k] = "empty";
-  for (const k in myBoard) myBoard[k] = 'empty';
-placedShips = [];
-  const sizes = shipSizes.map(x=>x).filter(x=>x>0);
-  const sizes = shipSizes.slice().filter(x => x>0);
-for (const s of sizes){
-let tries = 0, placed = false;
-while (!placed && tries < 1000){
-      const r = Math.floor(Math.random()*size), c = Math.floor(Math.random()*size);
-      const o = Math.random()<0.5 ? "H" : "V";
-      const r = Math.floor(Math.random() * size);
-      const c = Math.floor(Math.random() * size);
-      const o = Math.random() < 0.5 ? 'H' : 'V';
-const coords = canPlace(r,c,s,o);
-      if (coords){ coords.forEach(k=> myBoard[k] = "ship"); placedShips.push({id:'ship_'+Date.now()+'_'+Math.floor(Math.random()*9999), cells: coords}); placed = true; }
-      if (coords){ coords.forEach(k => myBoard[k] = 'ship'); placedShips.push({ id: 'ship_'+Date.now()+'_'+Math.floor(Math.random()*9999), cells: coords, size: s }); placed = true; }
-tries++;
-}
-}
-for (let i=0;i<shipSizes.length;i++) shipSizes[i] = 0;
-renderShipList(); renderBoards();
-}
-
-/* save board to DB and set ready */
-async function saveBoard(){
-/* DB helpers */
-async function ensureJoinedGame(){
-  // read lobby to find gameId
-  const lobbySnap = await get(ref(db, `lobbies/${lobbyCode}`));
-  if (!lobbySnap.exists()) throw new Error("Lobby niet gevonden");
-  const lobby = lobbySnap.val();
-  gameId = lobby.gameId;
-  gamemode = lobby.gamemode || 'classic';
-  size = lobby.size || (gamemode === 'power' ? 20 : 10);
-  setSizeAndMode(gamemode, size);
-  // ensure player entry exists
-  const playerRef = ref(db, `games/${gameId}/players/${myId}`);
-  const pSnap = await get(playerRef);
-  if (!pSnap.exists()){
-    // figure out slot index
-    const playersSnap = await get(ref(db, `games/${gameId}/players`));
-    let slot = 1;
-    if (!playersSnap.exists() || Object.keys(playersSnap.val()).length === 0) slot = 0;
-    await set(playerRef, { username: profile.username, ready: false, slot });
-  }
-  // find opponent id (if present)
-  const playersSnap2 = await get(ref(db, `games/${gameId}/players`));
-  const playersObj = playersSnap2.exists() ? playersSnap2.val() : {};
-  for (const pid in playersObj) if (pid !== myId) opponentId = pid;
-}
-
-/* Save boards & ready to DB */
-async function saveBoardAndReady(){
-if (!gameId) return;
-await set(ref(db, `games/${gameId}/players/${myId}/board`), myBoard);
-await set(ref(db, `games/${gameId}/players/${myId}/ships`), placedShips);
-await set(ref(db, `games/${gameId}/players/${myId}/ready`), true);
-  $("ready-badge-me").textContent = "✔️ Klaar";
-  log("Board opgeslagen (ready).");
-  $('ready-badge-me').textContent = '✔️ Klaar';
-  log('Je bent klaar — wacht op tegenstander');
-}
-
-/* animation: shot flying */
-function fireAnimation(targetTile, cb){
-  const img = document.createElement("img");
-  img.src = SHOT_URL;
-  img.className = "shot";
-  const area = $("cannon-area");
-  if (!area) { if(cb) cb(); return; }
-  area.appendChild(img);
-  const cannonEl = document.querySelector("#cannon");
-  const cannonRect = cannonEl ? cannonEl.getBoundingClientRect() : { left: 20, top: 20, width: 60, height: 40 };
-  const targetRect = targetTile.getBoundingClientRect();
-  const parentRect = area.getBoundingClientRect();
-  const startX = cannonRect.left + cannonRect.width/2 - parentRect.left;
-  const startY = cannonRect.top + cannonRect.height/2 - parentRect.top;
-  const endX = targetRect.left + targetRect.width/2 - parentRect.left;
-  const endY = targetRect.top + targetRect.height/2 - parentRect.top;
-  img.style.left = startX + "px"; img.style.top = startY + "px";
-  const dx = endX - startX, dy = endY - startY;
-  requestAnimationFrame(()=> { img.style.transform = `translate(${dx}px, ${dy}px) rotate(10deg) scale(0.9)`; });
-  setTimeout(()=> { img.classList.add("hide"); setTimeout(()=> { img.remove(); if (cb) cb(); }, 220); }, 780);
-}
-
-/* moves: transaction on target cell */
-/* shot logic:
-   - If hit -> do not switch turn (same player continues)
-   - If miss -> switch turn
-   - When ship sunk -> mark sunk and if gamemode power -> give powermove to shooter
-*/
-async function makeMove(cell){
-if (!gameId) return;
-  // get opponent id
-const gSnap = await get(ref(db, `games/${gameId}`));
-  const g = gSnap.val();
-  if (!g) return;
-  const g = gSnap.val() || {};
-const players = g.players || {};
-let targetId = null;
-for (const pid in players) if (pid !== myId) targetId = pid;
-  if (!targetId) { log("Geen tegenstander"); return; }
-
-  try {
-    const mvRef = push(ref(db, `games/${gameId}/moves`));
-    await set(mvRef, { by: myId, cell, ts: Date.now(), status: "processing" });
-
-    const cellRef = ref(db, `games/${gameId}/players/${targetId}/board/${cell}`);
-    await runTransaction(cellRef, current => {
-      if (!current || current === "empty") return "miss";
-      if (current === "ship") return "hit";
-      return; // already resolved
-    });
-  if (!targetId) { log('Geen tegenstander'); return; }
-
-  // create move entry
-  const mvRef = push(ref(db, `games/${gameId}/moves`));
-  await set(mvRef, { by: myId, cell, ts: Date.now(), status: 'processing' });
-
-  // transaction on target board cell
-  const cellRef = ref(db, `games/${gameId}/players/${targetId}/board/${cell}`);
-  await runTransaction(cellRef, cur => {
-    if (!cur || cur === 'empty') return 'miss';
-    if (cur === 'ship') return 'hit';
-    return; // already decided
-  });
-
-    const resSnap = await get(cellRef);
-    const result = resSnap.val();
-    await set(ref(db, `games/${gameId}/moves/${mvRef.key}/result`), result);
-
-    if (result === "hit"){
-      // check sunk
-      const shipsSnap = await get(ref(db, `games/${gameId}/players/${targetId}/ships`));
-      const ships = shipsSnap.exists() ? shipsSnap.val() : [];
-      const shipObj = ships.find(s => s.cells && s.cells.includes(cell));
-      if (shipObj){
-        let allHit = true;
-        for (const c of shipObj.cells){
-          const st = (await get(ref(db, `games/${gameId}/players/${targetId}/board/${c}`))).val();
-          if (st !== "hit" && st !== "sunk") { allHit = false; break; }
-  const resSnap = await get(cellRef);
-  const result = resSnap.val();
-  await set(ref(db, `games/${gameId}/moves/${mvRef.key}/result`), result);
-  log(`Je schoot op ${cell} => ${result}`);
-
-  if (result === 'hit'){
-    // check if a ship was sunk
-    const shipsSnap = await get(ref(db, `games/${gameId}/players/${targetId}/ships`));
-    const ships = shipsSnap.exists() ? shipsSnap.val() : [];
-    const ship = ships.find(s => s.cells && s.cells.includes(cell));
-    if (ship){
-      let allHit = true;
-      for (const c of ship.cells){
-        const st = (await get(ref(db, `games/${gameId}/players/${targetId}/board/${c}`))).val();
-        if (st !== 'hit' && st !== 'sunk') { allHit = false; break; }
-      }
-      if (allHit){
-        // mark sunk cells
-        const updates = {};
-        for (const c of ship.cells){
-          updates[`games/${gameId}/players/${targetId}/board/${c}`] = 'sunk';
-          updates[`games/${gameId}/players/${myId}/revealed/${c}`] = 'sunk';
-}
-        if (allHit){
-          // mark sunk
-          const updates = {};
-          for (const c of shipObj.cells){
-            updates[`games/${gameId}/players/${targetId}/board/${c}`] = "sunk";
-            updates[`games/${gameId}/players/${myId}/revealed/${c}`] = "sunk";
-          }
-          await update(ref(db, `/`), updates);
-          await set(ref(db, `games/${gameId}/moves/${mvRef.key}/sunkShipId`), shipObj.id);
-        await update(ref(db, `/`), updates);
-        await set(ref(db, `games/${gameId}/moves/${mvRef.key}/sunkShipId`), ship.id);
-        log('Ship gezonken!');
-        // in power mode: grant powermove to shooter
-        if (gamemode === 'power'){
-          const powRef = ref(db, `games/${gameId}/players/${myId}/power`);
-          await runTransaction(powRef, cur => (cur || 0) + 1);
-}
-}
-    } else {
-      await set(ref(db, `games/${gameId}/players/${targetId}/board/${cell}`), "miss");
-}
-
-    // do NOT switch turn on hit (player continues)
-    await set(ref(db, `games/${gameId}/turnUid`), myId);
-  } else {
-    // miss: ensure stored
-    await set(ref(db, `games/${gameId}/players/${targetId}/board/${cell}`), 'miss');
-    // switch turn to opponent
-await set(ref(db, `games/${gameId}/turnUid`), targetId);
-  }
-
-    // check victory
-    const targetBoardSnap = await get(ref(db, `games/${gameId}/players/${targetId}/board`));
-    const tboard = targetBoardSnap.exists() ? targetBoardSnap.val() : {};
-    const hasShipLeft = Object.values(tboard).some(v => v === "ship");
-    if (!hasShipLeft){
-      await set(ref(db, `games/${gameId}/status`), "finished");
-      await set(ref(db, `games/${gameId}/winner`), myId);
-      // update leaderboard if winner is registered
-      if (!profile.guest) await incrementWinsForUid(myId);
-    }
-
-  } catch (e){
-    console.error("move error", e);
-    log("Zet mislukt: " + (e.message || e));
-  // check victory: does target have any 'ship' left?
-  const targetBoardSnap = await get(ref(db, `games/${gameId}/players/${targetId}/board`));
-  const targetBoard = targetBoardSnap.exists() ? targetBoardSnap.val() : {};
-  const hasShipLeft = Object.values(targetBoard).some(v => v === 'ship');
-  if (!hasShipLeft){
-    await set(ref(db, `games/${gameId}/status`), 'finished');
-    await set(ref(db, `games/${gameId}/winner`), myId);
-    log('Je hebt gewonnen!');
-    if (!profile.guest) await incrementWinsForUid(myId);
-}
-}
-
-/* listen moves (animate) */
-function listenMoves(){
-  const movesRef = ref(db, `games/${gameId}/moves`);
-  onValue(movesRef, async snap => {
-    const m = snap.val() || {};
-    const keys = Object.keys(m);
-    if (!keys.length) return;
-    const last = m[keys[keys.length - 1]];
-    const tileSel = (last.by === myId) ? `#board-op [data-cell="${last.cell}"]` : `#board-me [data-cell="${last.cell}"]`;
-    const targetTile = document.querySelector(tileSel);
-    if (targetTile){
-      fireAnimation(targetTile, async ()=> await refreshBoards());
-    } else {
-      await refreshBoards();
-    }
-  });
-}
-
-/* refresh boards and UI */
-async function refreshBoards(){
-  const gSnap = await get(ref(db, `games/${gameId}`));
-  const g = gSnap.val() || {};
-  infoTurn.textContent = (g.turnUid === myId) ? "Jij" : "Tegenstander";
-  const players = g.players || {};
-  for (const pid in players){
-    if (pid === myId){
-      const b = players[pid].board || {};
-      for (const k in b) myBoard[k] = b[k];
-      if (players[pid].ready) $("ready-badge-me").textContent = "✔️ Klaar";
-    } else {
-      const b = players[pid].board || {};
-      for (const k in b) if (b[k] === "hit" || b[k] === "miss" || b[k] === "sunk") oppBoard[k] = b[k];
-      if (players[pid].ready) $("ready-badge-op").textContent = "✔️ Klaar";
-/* powershot: reveal 3x3 around chosen cell (only power mode & only if player has power >0) */
-async function powerShot(centerCell){
-  if (gamemode !== 'power') return;
-  const powSnap = await get(ref(db, `games/${gameId}/players/${myId}/power`));
-  const powCount = powSnap.exists() ? powSnap.val() : 0;
-  if (powCount <= 0){ log('Geen powershots beschikbaar'); return; }
-  // compute center coords
-  const r = centerCell.charCodeAt(0) - 65;
-  const c = parseInt(centerCell.slice(1),10) - 1;
-  const cells = [];
-  for (let dr = -1; dr <= 1; dr++){
-    for (let dc = -1; dc <= 1; dc++){
-      const rr = r + dr; const cc = c + dc;
-      if (rr >= 0 && rr < size && cc >= 0 && cc < size) cells.push(cellName(rr,cc));
-}
-}
-  renderBoards();
-
-  // finished?
-  if (g.status === "finished"){
-    const winner = g.winner;
-    if (winner === myId){
-      showOverlay("<h2>Je hebt gewonnen! 🏆</h2>", `<button id="overlay-close">Sluit</button>`);
-      document.body.classList.add('win-anim');
-      setTimeout(()=> document.body.classList.remove('win-anim'), 2200);
-    } else {
-      showOverlay("<h2>Je hebt verloren</h2>", `<button id="overlay-close">Sluit</button>`);
-      document.body.classList.add('lose-anim');
-      setTimeout(()=> document.body.classList.remove('lose-anim'), 2200);
-    }
-  // For each cell, do same transaction as a normal shot (hit/miss)
-  for (const cell of cells){
-    const targetId = Object.keys((await get(ref(db, `games/${gameId}/players`))).val()).find(pid => pid !== myId);
-    if (!targetId) continue;
-    const cellRef = ref(db, `games/${gameId}/players/${targetId}/board/${cell}`);
-    await runTransaction(cellRef, cur => {
-      if (!cur || cur === 'empty') return 'miss';
-      if (cur === 'ship') return 'hit';
-      return;
-    });
-    // we don't change turn per cell; treat as one combined power move
-}
-  // consume one power
-  await runTransaction(ref(db, `games/${gameId}/players/${myId}/power`), cur => Math.max((cur || 0) - 1, 0));
-  await set(ref(db, `games/${gameId}/turnUid`), myId); // still your turn after power
-  log('Powershot uitgevoerd!');
-}
-
-/* main init */
-async function init(){
-  infoLobby.textContent = lobbyCode;
-  infoPlayer.textContent = profile.username || profile.uid;
-  // load lobby => find gameId
-/* listeners */
-async function listenGame(){
-  // find gameId first
-const lobbySnap = await get(ref(db, `lobbies/${lobbyCode}`));
-  if (!lobbySnap.exists()) { $("status-msg").textContent = "Lobby niet gevonden"; return; }
-  if (!lobbySnap.exists()) { showOverlay('Lobby niet gevonden'); return; }
-const lobby = lobbySnap.val();
-gameId = lobby.gameId;
-  setSize(lobby.gamemode || 10);
-  gamemode = lobby.gamemode || 'classic';
-  size = lobby.size || (gamemode === 'power' ? 20 : 10);
-  setSizeAndMode(gamemode, size);
-  infoLobby.textContent = lobbyCode;
-  infoPlayer.textContent = profile.username || profile.uid;
-
-  // ensure player in game node
-  // ensure player exists
-const meRef = ref(db, `games/${gameId}/players/${myId}`);
-const meSnap = await get(meRef);
-if (!meSnap.exists()){
-@@ -338,91 +331,158 @@ async function init(){
-await set(meRef, { username: profile.username, ready: false, slot });
-}
-
-  // local UI events
-  boardMeEl.addEventListener("click", e => {
-    const t = e.target.closest(".tile"); if (!t) return; placeShipAt(t.dataset.cell);
-  });
-  boardOpEl.addEventListener("click", async e => {
-    const t = e.target.closest(".tile"); if (!t) return;
-    const cell = t.dataset.cell;
-    const gSnap = await get(ref(db, `games/${gameId}`));
-    const g = gSnap.val();
-    if (!g) return;
-    if (g.turnUid !== myId){ showOverlay("Niet jouw beurt", `<button id="overlay-close">Ok</button>`); return; }
-    if (oppBoard[cell] === "hit" || oppBoard[cell] === "miss" || oppBoard[cell] === "sunk"){ showOverlay("Al geschoten op deze cel", `<button id="overlay-close">Ok</button>`); return; }
-    await makeMove(cell);
-  // listen players
-  onValue(ref(db, `games/${gameId}/players`), snap => {
-    const players = snap.val() || {};
-    ready = players[myId] && players[myId].ready;
-    if (players[myId] && players[myId].power) powerCount = players[myId].power;
-    // opponent id
-    for (const pid in players) if (pid !== myId) opponentId = pid;
-    // update ready badges
-    if (players[myId] && players[myId].ready) $('ready-badge-me').textContent = '✔️ Klaar'; else $('ready-badge-me').textContent = '';
-    for (const pid in players) if (pid !== myId) $('ready-badge-op').textContent = players[pid].ready ? '✔️ Klaar' : '';
-    updateUI();
-});
-
-  btnRandom.addEventListener("click", randomPlaceAll);
-  btnRotate.addEventListener("click", ()=>{ orientation = orientation === "H" ? "V" : "H"; btnRotate.textContent = `Rotate (${orientation})`; });
-  btnReady.addEventListener("click", async ()=>{
-    await saveBoard();
-    // if both ready -> set in_progress
-    const gSnap = await get(ref(db, `games/${gameId}`));
-    const g = gSnap.val() || {};
-    const players = g.players || {};
-    const ids = Object.keys(players);
-    if (ids.length >= 2){
-      const bothReady = ids.every(id => players[id].ready);
-      if (bothReady){
-        const starter = ids[Math.floor(Math.random()*ids.length)];
-        await set(ref(db, `games/${gameId}/status`), "in_progress");
-        await set(ref(db, `games/${gameId}/turnUid`), starter);
-        showOverlay("Game start! Veel succes", `<button id="overlay-close">Ok</button>`);
-      } else {
-        showOverlay("Wachten op tegenstander...", `<button id="overlay-close">Ok</button>`);
-      }
-    } else {
-      showOverlay("Wachten op een speler om te joinen...", `<button id="overlay-close">Ok</button>`);
-  // listen game status and turn
-  onValue(ref(db, `games/${gameId}`), async snap => {
-    const g = snap.val() || {};
-    if (g.turnUid) infoTurn.textContent = (g.turnUid === myId) ? 'Jij' : 'Tegenstander';
-    if (g.status === 'in_progress') {
-      // ensure boards shown reflect DB
-      await refreshBoards();
-}
-  });
-
-  // listen for players changes
-  onValue(ref(db, `games/${gameId}/players`), snap => {
-    const players = snap.val() || {};
-    // update ready badges and detect opponent
-    for (const pid in players){
-      if (pid !== myId) opponentId = pid;
-      if (pid === myId){
-        if (players[pid].ready) $("ready-badge-me").textContent = "✔️ Klaar";
-    if (g.status === 'finished'){
-      const winner = g.winner;
-      if (winner === myId){
-        showOverlay('<h2>Gefeliciteerd — gewonnen! 🏆</h2>', '<button id="overlay-close">Sluit</button>');
-        document.body.classList.add('win-anim'); setTimeout(()=> document.body.classList.remove('win-anim'), 2200);
-} else {
-        if (players[pid].ready) $("ready-badge-op").textContent = "✔️ Klaar";
-        showOverlay('<h2>Je hebt verloren</h2>', '<button id="overlay-close">Sluit</button>');
-        document.body.classList.add('lose-anim'); setTimeout(()=> document.body.classList.remove('lose-anim'), 2200);
-}
-}
-    await refreshBoards();
-});
-
-  // listen for game state changes
-  onValue(ref(db, `games/${gameId}`), async snap => {
-    const g = snap.val() || {};
-    if (g.turnUid) infoTurn.textContent = (g.turnUid === myId) ? "Jij" : "Tegenstander";
-    await refreshBoards();
-  // listen moves for animation
-  onValue(ref(db, `games/${gameId}/moves`), snap => {
-    const moves = snap.val() || {};
-    const keys = Object.keys(moves);
-    if (!keys.length) return;
-    const last = moves[keys[keys.length - 1]];
-    // animate via CSS class or simple log (we removed cannon graphic)
-    log(`Laatste zet: ${last.by} -> ${last.cell} (${last.result || '...'})`);
-});
-
-  listenMoves();
-  await refreshBoards();
-  loadLeaderboard();
-  // enable powermove button when available
-  onValue(ref(db, `games/${gameId}/players/${myId}/power`), snap => {
-    const v = snap.val() || 0;
-    powerCount = v;
-    $('info-power').textContent = v;
-    btnPower.disabled = (v <= 0);
-  });
-}
-
-init();
-
-/* Leaderboard loader */
-async function loadLeaderboard(){
-  const usersSnap = await get(ref(db, `users`));
-  const users = usersSnap.exists() ? usersSnap.val() : {};
-  const arr = [];
-  for (const uid in users){
-    const u = users[uid];
-    const name = (u.profile && u.profile.username) ? u.profile.username : (u.profile && u.profile.name) ? u.profile.name : uid;
-    const wins = (u.stats && typeof u.stats.wins !== "undefined") ? u.stats.wins : 0;
-    arr.push({ name, wins });
-/* refresh boards by reading DB */
-async function refreshBoards(){
-  if (!gameId) return;
-  const playersSnap = await get(ref(db, `games/${gameId}/players`));
-  const players = playersSnap.exists() ? playersSnap.val() : {};
-  for (const pid in players){
-    const p = players[pid];
-    if (pid === myId){
-      const b = p.board || {};
-      for (const k in b) myBoard[k] = b[k];
-    } else {
-      const b = p.board || {};
-      for (const k in b){
-        if (b[k] === 'hit' || b[k] === 'miss' || b[k] === 'sunk') oppBoard[k] = b[k];
-      }
-    }
-}
-  arr.sort((a,b) => b.wins - a.wins);
-  leaderboardEl.innerHTML = "";
-  arr.slice(0,50).forEach((u,i)=>{
-    const row = document.createElement("div");
-    row.className = "leader-row";
-    row.innerHTML = `<div class="leader-pos">${i+1}</div><div class="leader-name">${u.name}</div><div class="leader-wins">${u.wins} winst(en)</div>`;
-    leaderboardEl.appendChild(row);
-  });
-  renderBoards();
-}
-
-/* UI updates */
-function updateUI(){
-  $('info-power') && ($('info-power').textContent = powerCount || 0);
-  // power button availability
-  btnPower.disabled = !(powerCount > 0);
-  // whose turn highlight will be updated by refresh when turnUid is set
-}
-
-/* attach UI events */
-boardMeEl?.addEventListener('click', e => {
-  const t = e.target.closest('.tile'); if (!t) return;
-  placeShipAt(t.dataset.cell);
-});
-boardOpEl?.addEventListener('click', async e => {
-  const t = e.target.closest('.tile'); if (!t) return;
-  const cell = t.dataset.cell;
-  // only allow shooting when game in progress and it's your turn
-  const gSnap = await get(ref(db, `games/${gameId}`));
-  const g = gSnap.val() || {};
-  if (g.status !== 'in_progress'){ showOverlay('Wacht tot het spel gestart is', '<button id="overlay-close">OK</button>'); return; }
-  if (g.turnUid !== myId){ showOverlay('Niet jouw beurt', '<button id="overlay-close">OK</button>'); return; }
-  const known = oppBoard[cell];
-  if (known === 'hit' || known === 'miss' || known === 'sunk'){ showOverlay('Al geschoten op deze cel', '<button id="overlay-close">OK</button>'); return; }
-  // make move
-  await makeMove(cell);
-});
-
-btnRandom?.addEventListener('click', randomPlaceAll);
-btnRotate?.addEventListener('click', ()=>{ orientation = orientation === 'H' ? 'V' : 'H'; btnRotate.textContent = `Rotate (${orientation})`; });
-btnReady?.addEventListener('click', async ()=>{
-  await saveBoardAndReady();
-  // if both ready -> set status in_progress and pick random starter
-  const gSnap = await get(ref(db, `games/${gameId}`));
-  const g = gSnap.val() || {};
-  const players = g.players || {};
-  const ids = Object.keys(players);
-  if (ids.length >= 2){
-    const bothReady = ids.every(id => players[id].ready);
-    if (bothReady){
-      const starter = ids[Math.floor(Math.random()*ids.length)];
-      await set(ref(db, `games/${gameId}/status`), 'in_progress');
-      await set(ref(db, `games/${gameId}/turnUid`), starter);
-      showOverlay('Game gestart! Veel succes', '<button id="overlay-close">Ok</button>');
-    } else {
-      showOverlay('Wachten op tegenstander', '<button id="overlay-close">OK</button>');
-    }
-  } else {
-    showOverlay('Wachten op tegenstander om te joinen', '<button id="overlay-close">OK</button>');
-  }
-});
-
-// powershot click: user picks a cell on opponent board to use power on next click
-let awaitingPowerTarget = false;
-btnPower?.addEventListener('click', ()=>{
-  if (!btnPower || btnPower.disabled) return;
-  awaitingPowerTarget = true;
-  showOverlay('Klik op een cel bij de tegenstander om powershot uit te voeren', '<button id="overlay-close">Annuleer</button>');
-  const cbtn = document.getElementById('overlay-close');
-  if (cbtn) cbtn.onclick = ()=> { overlay.classList.add('hidden'); awaitingPowerTarget = false; };
-});
-
-// handle powershot target by listening to clicks (boardOp click handler will check awaitingPowerTarget)
-boardOpEl?.addEventListener('click', async e => {
-  if (!awaitingPowerTarget) return;
-  const t = e.target.closest('.tile'); if(!t) return;
-  const cell = t.dataset.cell;
-  awaitingPowerTarget = false;
-  overlay.classList.add('hidden');
-  await powerShot(cell);
-  // after powerShot, refresh boards
-  await refreshBoards();
-});
-
-// initial start
-(async ()=> {
-  await ensureJoinedGame().catch(err=>{
-    console.error(err);
-    showOverlay('Kon niet joinen: ' + (err.message || err), '<button id="overlay-close">Ok</button>');
-  });
-  await listenGame();
-  await refreshBoards();
+// bepaal role
+(async function determineRole(){
+  const snap = await dbGet(dbRef(db, 'lobbies/' + code + '/players'));
+  if(!snap.exists()) { alert('Lobby bestaat niet meer.'); location.href='index.html'; }
+  const p = snap.val();
+  if(p.host === player){ role = 'host'; opponentRole = 'guest'; }
+  else if(p.guest === player){ role = 'guest'; opponentRole = 'host'; }
+  else { alert('Je staat niet in deze lobby.'); location.href='index.html'; }
+  init();
 })();
+
+function init(){
+  dbOnValue(dbRef(db, 'lobbies/' + code), (snap)=>{
+    if(!snap.exists()) return;
+    lobby = snap.val();
+    turn = lobby.turn || 'host';
+    finished = (lobby.status === 'finished');
+    updateTurnPopup();
+    loadBoards();
+    loadShots();
+    if(finished){
+      const winner = lobby.winner;
+      appendLog('Spel afgelopen — winnaar: ' + (winner || 'onbekend'));
+      turnPopup.textContent = 'Spel afgelopen — winnaar: ' + (winner || 'onbekend');
+    }
+  });
+
+  dbOnValue(dbRef(db, 'lobbies/' + code + '/shots'), (snap)=>{
+    // live update
+    const shots = snap.val() || {};
+    ourShots = {}; oppShots = {};
+    Object.values(shots).forEach(entry=>{
+      if(entry.byRole === role) ourShots[entry.index] = entry;
+      else oppShots[entry.index] = entry;
+    });
+    renderOpponentBoard();
+    renderOwnBoard();
+  });
+
+  document.getElementById('btnLeave')?.addEventListener('click', leave);
+  document.getElementById('btnRestart')?.addEventListener('click', restart);
+}
+
+function loadBoards(){
+  dbGet(dbRef(db, 'lobbies/' + code + '/boards')).then(snap=>{
+    const b = snap.val() || {};
+    ownCells = b?.[role]?.cells || [];
+    renderOwnBoard();
+  });
+}
+
+function loadShots(){
+  dbGet(dbRef(db, 'lobbies/' + code + '/shots')).then(snap=>{
+    const s = snap.val() || {};
+    ourShots = {}; oppShots = {};
+    Object.values(s).forEach(entry=>{
+      if(entry.byRole === role) ourShots[entry.index] = entry;
+      else oppShots[entry.index] = entry;
+    });
+    renderOpponentBoard();
+    renderOwnBoard();
+  });
+}
+
+function updateTurnPopup(){
+  if(finished) { turnPopup.textContent = 'Spel afgelopen.'; return; }
+  turnPopup.textContent = (turn === role) ? 'Jij bent aan de beurt!' : 'Wachten op tegenstander...';
+}
+
+// render own board (toon eigen schepen + hits)
+function renderOwnBoard(){
+  const cells = document.querySelectorAll('#ownBoard .cell');
+  cells.forEach(c=>{
+    const i = c.dataset.i;
+    c.className = 'cell';
+    c.textContent = '';
+    if(ownCells.includes(parseInt(i))){ c.classList.add('own'); }
+    if(oppShots[i]){
+      if(oppShots[i].result === 'hit'){ c.classList.add('hit'); c.textContent = '✖'; }
+      else { c.classList.add('miss'); c.textContent = '•'; }
+    }
+  });
+}
+
+// render opponent board (fog of war)
+function renderOpponentBoard(){
+  const cells = document.querySelectorAll('#oppBoard .cell');
+  cells.forEach(c=>{
+    const i = c.dataset.i;
+    c.className = 'cell';
+    c.textContent = '';
+    if(ourShots[i]){
+      if(ourShots[i].result === 'hit'){ c.classList.add('hit'); c.textContent = '✖'; }
+      else { c.classList.add('miss'); c.textContent = '•'; }
+    }
+  });
+}
+
+let selectedPower = new Set();
+
+async function onCellClick(index, el){
+  if(finished) return;
+  if(turn !== role) return alert('Niet jouw beurt!');
+  if(ourShots[index]) return; // al geschoten
+  if(mode === 'classic' || mode === 'streak'){
+    await makeShot([index]);
+  } else if(mode === 'power'){
+    // toggle
+    if(selectedPower.has(index)){ selectedPower.delete(index); renderOpponentBoard(); }
+    else {
+      if(selectedPower.size >= 3) return alert('Max 3 vakjes voor power.');
+      selectedPower.add(index);
+      el.classList.add('revealed');
+      el.textContent = '?';
+    }
+    showPowerButtons();
+  }
+}
+
+function showPowerButtons(){
+  if(document.getElementById('powerBtns')) return;
+  const panel = document.createElement('div');
+  panel.id = 'powerBtns';
+  panel.className = 'flex';
+  const ok = document.createElement('button'); ok.textContent = 'Bevestig'; ok.className = 'small';
+  const cancel = document.createElement('button'); cancel.textContent = 'Annuleer'; cancel.className = 'small';
+  ok.onclick = async ()=>{
+    if(selectedPower.size === 0) return alert('Kies minstens 1 vakje.');
+    const arr = Array.from(selectedPower);
+    selectedPower.clear();
+    panel.remove();
+    await makeShot(arr);
+  };
+  cancel.onclick = ()=>{
+    selectedPower.clear();
+    panel.remove();
+    renderOpponentBoard();
+  };
+  panel.appendChild(ok); panel.appendChild(cancel);
+  document.querySelector('.panel').appendChild(panel);
+}
+
+async function makeShot(indices){
+  // schrijf shot entries (push) en bepaal resultaten
+  const boardsSnap = await dbGet(dbRef(db, 'lobbies/' + code + '/boards'));
+  const boards = boardsSnap.val() || {};
+  if(!boards[opponentRole]) return alert('Tegenstander nog niet klaar.');
+  const oppCells = boards[opponentRole].cells || [];
+  const updates = {};
+  const results = [];
+  for(const idx of indices){
+    const isHit = oppCells.includes(parseInt(idx));
+    const res = isHit ? 'hit' : 'miss';
+    results.push({ index: idx, result: res });
+    const newKey = dbPush(dbRef(db, 'lobbies/' + code + '/shots')).key;
+    updates[`lobbies/${code}/shots/${newKey}`] = { index: idx, byRole: role, result: res, ts: Date.now() };
+  }
+  await dbUpdate(dbRef(db, '/'), updates);
+
+  // bepaal nieuwe turn
+  if(mode === 'classic') turn = (turn === 'host') ? 'guest' : 'host';
+  else if(mode === 'streak'){
+    const anyHit = results.some(r=> r.result === 'hit');
+    if(!anyHit) turn = (turn === 'host') ? 'guest' : 'host';
+  } else if(mode === 'power'){
+    turn = (turn === 'host') ? 'guest' : 'host';
+  }
+  await dbSetIfNeeded(`lobbies/${code}/turn`, turn);
+
+  appendLog(`Je schoot op ${indices.join(', ')} => ${results.map(r=> r.result).join(', ')}`);
+
+  // herlaad en check win
+  await new Promise(r => setTimeout(r, 200));
+  await checkWin();
+}
+
+async function dbSetIfNeeded(path, val){
+  // helper: dbUpdate single pad
+  const obj = {};
+  obj[path] = val;
+  // Using update at root because dbUpdate(dbRef(db,'/'), obj) expects full path as keys
+  await dbUpdate(dbRef(db, '/'), obj);
+}
+
+function appendLog(t){
+  const p = document.createElement('div'); p.textContent = t;
+  gameLog.prepend(p);
+}
+
+async function checkWin(){
+  const boardsSnap = await dbGet(dbRef(db, 'lobbies/' + code + '/boards'));
+  const boards = boardsSnap.val() || {};
+  if(!boards.host || !boards.guest) return;
+  const hostCells = boards.host.cells || [];
+  const guestCells = boards.guest.cells || [];
+
+  const shotsSnap = await dbGet(dbRef(db, 'lobbies/' + code + '/shots'));
+  const shots = shotsSnap.val() || {};
+  const hitOnHost = new Set();
+  const hitOnGuest = new Set();
+  Object.values(shots).forEach(e=>{
+    if(e.result !== 'hit') return;
+    if(e.byRole === 'host') hitOnGuest.add(parseInt(e.index));
+    else hitOnHost.add(parseInt(e.index));
+  });
+
+  const guestLost = guestCells.length>0 && guestCells.every(c => hitOnGuest.has(parseInt(c)));
+  const hostLost  = hostCells.length>0 && hostCells.every(c => hitOnHost.has(parseInt(c)));
+  if(guestLost || hostLost){
+    finished = true;
+    const winnerName = guestLost ? lobby.players.host : lobby.players.guest;
+    await dbUpdate(dbRef(db, '/'), {
+      [`lobbies/${code}/status`]: 'finished',
+      [`lobbies/${code}/winner`]: winnerName
+    });
+    appendLog('Spel afgelopen — winnaar: ' + winnerName);
+    turnPopup.textContent = 'Spel afgelopen — winnaar: ' + winnerName;
+  }
+}
+
+async function leave(){
+  if(!confirm('Weet je zeker dat je wil verlaten?')) return;
+  // verwijder jezelf uit players (optioneel)
+  const playersSnap = await dbGet(dbRef(db, 'lobbies/' + code + '/players'));
+  const players = playersSnap.val() || {};
+  if(players[role]) await dbUpdate(dbRef(db, '/'), { [`lobbies/${code}/players/${role}`]: null });
+  localStorage.removeItem('lobbyCode');
+  location.href = 'lobby.html';
+}
+
+async function restart(){
+  if(!confirm('Start nieuwe lobby (je wordt host)?')) return;
+  const newCode = Math.floor(1000 + Math.random()*9000).toString();
+  const lobbyObj = { players: { host: player }, status: 'waiting', mode: mode, created: Date.now() };
+  await dbUpdate(dbRef(db, '/'), { [`lobbies/${newCode}`]: lobbyObj });
+  // remove self from old lobby for cleanliness
+  await dbUpdate(dbRef(db, '/'), { [`lobbies/${code}/players/${role}`]: null });
+  localStorage.setItem('lobbyCode', newCode);
+  location.href = 'place-ships.html';
+}
