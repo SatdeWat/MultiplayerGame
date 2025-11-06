@@ -5,6 +5,38 @@
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>Zeeslag - Home</title>
 <link rel="stylesheet" href="style.css">
+<style>
+  /* extra style alleen voor mooiere lobbycode invoer */
+  #joinLobbySection {
+    display: none;
+    text-align: center;
+  }
+  .lobby-input-wrap {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 10px;
+    margin-top: 14px;
+  }
+  #lobbyCodeInput {
+    width: 180px;
+    padding: 12px 14px;
+    border-radius: 12px;
+    border: none;
+    background: rgba(255,255,255,0.08);
+    color: #fff;
+    text-align: center;
+    font-size: 16px;
+    letter-spacing: 2px;
+    font-weight: 600;
+    outline: none;
+    transition: 0.2s ease;
+  }
+  #lobbyCodeInput:focus {
+    background: rgba(255,255,255,0.15);
+    box-shadow: 0 0 12px rgba(0,170,255,0.5);
+  }
+</style>
 </head>
 <body>
 <div class="container">
@@ -28,9 +60,10 @@
     <div id="sizeSelection" style="margin-top:12px;"></div>
   </div>
 
-  <div id="joinLobbySection" style="display:none; margin-top:12px;">
-    <input id="lobbyCodeInput" placeholder="Lobby code (bv. AB12C)" />
-    <div style="margin-top:8px;">
+  <div id="joinLobbySection">
+    <h3 style="margin-top:20px;">Voer lobbycode in</h3>
+    <div class="lobby-input-wrap">
+      <input id="lobbyCodeInput" placeholder="ABCDE" maxlength="5" />
       <button id="joinConfirmBtn">Join</button>
     </div>
     <p class="msg">Vul de code van je vriend in om te joinen.</p>
@@ -39,7 +72,7 @@
 </div>
 
 <script type="module">
-import { db, dbRef as ref, dbSet as set, dbGet as get, dbUpdate as update, dbOnValue as onValue } from "./firebase.js";
+import { db, dbRef as ref, dbSet as set, dbGet as get, dbUpdate as update } from "./firebase.js";
 
 const username = localStorage.getItem("username");
 if(!username) window.location.href="index.html";
@@ -61,6 +94,7 @@ createLobbyBtn.addEventListener("click", ()=>{
 joinLobbyBtn.addEventListener("click", ()=>{
   createLobbySection.style.display = "none";
   joinLobbySection.style.display = "block";
+  lobbyCodeInput.focus();
 });
 logoutBtn.addEventListener("click", ()=>{
   localStorage.clear();
