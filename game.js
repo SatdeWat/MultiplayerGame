@@ -1,206 +1,262 @@
-import { db, ref, set, get, onValue, update } from "./firebase.js";
+// game.js
+import { db, dbRef as ref, dbSet as set, dbGet as get, dbUpdate as update, dbOnValue as onValue } from "./firebase.js";
 
 const username = localStorage.getItem("username");
-const isGuest = localStorage.getItem("isGuest") === "true";
+const isGuest = localStorage.getItem("isGuest")==="true";
 const lobbyCode = localStorage.getItem("lobbyCode");
+if(!username || !lobbyCode) window.location.href="home.html";
 
-if(!username || !lobbyCode) window.location.href="index.html";
-
-const lobbyScreen = document.getElementById("lobbyScreen");
-const gameScreen = document.getElementById("gameScreen");
-const readyBtn = document.getElementById("readyBtn");
-const rotateBtn = document.getElementById("rotateBtn");
-const playerNameSpan = document.getElementById("playerName");
-const opponentNameSpan = document.getElementById("opponentName");
-const lobbyCodeDisplay = document.getElementById("lobbyCodeDisplay");
 const myBoardDiv = document.getElementById("myBoard");
 const enemyBoardDiv = document.getElementById("enemyBoard");
-const turnInfo = document.getElementById("turnInfo");
-const gameMessage = document.getElementById("gameMessage");
+const rotateBtn = document.getElementById("rotateBtn");
+const toHome = document.getElementById("toHome");
+const turnPopup = document.getElementById("turnPopup");
+const turnPlayer = document.getElementById("turnPlayer");
+const gameNote = document.getElementById("gameNote");
 
 let lobbyData = null;
 let opponent = null;
 let size = 10;
-let shipsArray = [];
-let placedShips = [];
+let shipLengths = [5,4,3];
+let placedShips = []; // array of arrays of coordinates e.g. ["0,0","1,0","2,0"]
 let hoverCells = [];
 let orientation = "horizontal";
-let phase = "placing";
-let myShots = {};
+let phase = "placing"; // placing, waiting, playing, ended
+let myShots = {}; // record of shots we've fired
 let isMyTurn = false;
 
-const lobbyRef = ref(db,"lobbies/"+lobbyCode);
-const gameRef = ref(db,"games/"+lobbyCode);
+const lobbyRef = ref(db, "lobbies/" + lobbyCode);
+const gameRef = ref(db, "games/" + lobbyCode);
 
-async function init(){
+// initialize: read lobby config and build grids
+(async function init(){
   const snap = await get(lobbyRef);
-  if(!snap.exists()){ alert("Lobby niet gevonden!"); window.location.href="home.html"; return; }
+  if(!snap.exists()) { alert("Lobby niet gevonden"); window.location.href="home.html"; return; }
   lobbyData = snap.val();
   size = lobbyData.size;
-  shipsArray = Array(lobbyData.ships).fill(0).map((_,i)=>lobbyData.ships-i);
-  opponent = (lobbyData.host === username)?lobbyData.guest:lobbyData.host;
-  lobbyCodeDisplay.textContent = lobbyCode;
-  playerNameSpan.textContent = username + " ❌";
-  createBoard(myBoardDiv,size,true,placeShipPreview);
-  createBoard(enemyBoardDiv,size,false,shoot);
-
-  onValue(lobbyRef,snap=>{
-    const data = snap.val();
-    opponent = (lobbyData.host === username)?data.guest:data.host;
-    opponentNameSpan.textContent = (opponent || "Wachten...") + ((data.ready?.[opponent])?" ✅":" ❌");
-
-    if(data.ready?.[username] && data.ready?.[opponent]){
-      startGame();
+  opponent = (lobbyData.host === username) ? lobbyData.guest : lobbyData.host;
+  createBoard(myBoardDiv, size, true, placePreviewHandler);
+  createBoard(enemyBoardDiv, size, false, shootHandler);
+  gameNote.textContent = `Plaats schepen: ${shipLengths.join(", ")} (in volgorde).`;
+  // listen for game node creation & updates
+  onValue(gameRef, (s) => {
+    const data = s.val() || {};
+    // If both players exist in games node and have ships, determine if both placed:
+    const players = Object.keys(data).filter(k => k !== "turn");
+    if(players.length === 2 && data[username] && data[opponent]) {
+      // render boards as shots / hits occur
+      renderBoards(data);
+      // determine turn
+      if(data.turn) {
+        updateTurnDisplay(data.turn);
+      }
     }
   });
-}
-init();
+})();
 
-// --- Bord maken ---
-function createBoard(boardDiv,size,clickable=false,handler=null){
-  boardDiv.innerHTML="";
-  boardDiv.style.gridTemplateColumns=`repeat(${size},40px)`;
-  boardDiv.style.gridTemplateRows=`repeat(${size},40px)`;
-  for(let y=0;y<size;y++){
-    for(let x=0;x<size;x++){
+// board creation
+function createBoard(boardDiv, gridSize, clickable=false, handler=null){
+  boardDiv.innerHTML = "";
+  boardDiv.style.gridTemplateColumns = `repeat(${gridSize}, 40px)`;
+  boardDiv.style.gridTemplateRows = `repeat(${gridSize}, 40px)`;
+  boardDiv.classList.add("board-grid");
+  for(let y=0;y<gridSize;y++){
+    for(let x=0;x<gridSize;x++){
       const cell = document.createElement("div");
       cell.classList.add("cell");
-      cell.dataset.x=x;
-      cell.dataset.y=y;
+      cell.dataset.x = x;
+      cell.dataset.y = y;
       if(clickable && handler){
-        cell.addEventListener("mouseenter",()=>handler(x,y,true));
-        cell.addEventListener("mouseleave",()=>handler(x,y,false));
-        cell.addEventListener("click",()=>handler(x,y,"place"));
+        cell.addEventListener("mouseenter", ()=> handler(x,y,true));
+        cell.addEventListener("mouseleave", ()=> handler(x,y,false));
+        cell.addEventListener("click", ()=> handler(x,y,"place"));
       }
       boardDiv.appendChild(cell);
     }
   }
 }
 
-// --- Hover / Plaats ---
-function placeShipPreview(x,y,action){
-  if(phase!=="placing") return;
-  const length = shipsArray[0];
-  const coords=[];
+// preview & place handler for my board
+function placePreviewHandler(x,y,action){
+  if(phase !== "placing") return;
+  if(shipLengths.length === 0) return;
+  const length = shipLengths[0];
+  const coords = [];
   for(let i=0;i<length;i++){
-    let cx = x + (orientation==="horizontal"?i:0);
-    let cy = y + (orientation==="vertical"?i:0);
-    if(cx>=size || cy>=size) return;
+    const cx = x + (orientation === "horizontal" ? i : 0);
+    const cy = y + (orientation === "vertical" ? i : 0);
+    if(cx >= size || cy >= size) { return; } // out of bounds => no preview
     coords.push(`${cx},${cy}`);
   }
 
-  if(action===true){coords.forEach(c=>{ const [cx,cy]=c.split(","); const cell=[...myBoardDiv.children].find(d=>d.dataset.x==cx&&d.dataset.y==cy); if(cell) {cell.style.background="rgba(0,255,0,0.4)"; hoverCells.push(cell);}});}
-  else if(action===false){hoverCells.forEach(c=>c.style.background="rgba(255,255,255,0.1)"); hoverCells=[];}
-  else if(action==="place"){
-    if(coords.flat().some(c=>placedShips.flat().includes(c))) return alert("Schepen overlappen niet!");
+  if(action === true){
+    // hover on: show preview (green) unless overlaps existing placed ships
+    const overlaps = coords.some(c => placedShips.flat().includes(c));
+    coords.forEach(c => {
+      const [cx,cy] = c.split(",");
+      const cell = [...myBoardDiv.children].find(n => n.dataset.x == cx && n.dataset.y == cy);
+      if(cell) cell.style.background = overlaps ? "rgba(255,80,80,0.45)" : "rgba(0,200,120,0.35)";
+      hoverCells.push(cell);
+    });
+  } else if(action === false){
+    // hover out: reset hover cells
+    hoverCells.forEach(c => { if(c) c.style.background = "rgba(255,255,255,0.03)"; });
+    hoverCells = [];
+  } else if(action === "place"){
+    // place on click: check overlap, save and mark
+    const overlaps = coords.some(c => placedShips.flat().includes(c));
+    if(overlaps) { alert("Schepen mogen niet overlappen."); return; }
     placedShips.push(coords);
-    coords.forEach(c=>{ const [cx,cy]=c.split(","); const cell=[...myBoardDiv.children].find(d=>d.dataset.x==cx&&d.dataset.y==cy); if(cell){ cell.style.background="#4caf50"; cell.textContent="🚢";}});
-    shipsArray.shift();
-    if(shipsArray.length>0) gameMessage.textContent=`Plaats schip van lengte ${shipsArray[0]}`;
-    else gameMessage.textContent="Klik op Klaar als je klaar bent!";
+    coords.forEach(c => {
+      const [cx,cy] = c.split(",");
+      const cell = [...myBoardDiv.children].find(n => n.dataset.x == cx && n.dataset.y == cy);
+      if(cell){ cell.style.background = "#4caf50"; cell.textContent = "🚢"; }
+    });
+    shipLengths.shift();
+    if(shipLengths.length === 0){
+      // finished placing locally — write to DB (unless guest)
+      phase = "waiting";
+      gameNote.textContent = "Schepen geplaatst. Klik in de LOBBY op Klaar (of als je al klaar bent, wacht).";
+      // write ships to games node (create if necessary)
+      if(!isGuest){
+        // ensure game node exists; lobby page created initial game nodes when both players ready
+        await set(ref(db, `games/${lobbyCode}/${username}`), { ships: placedShips.flat(), shots: {} });
+      }
+    } else {
+      gameNote.textContent = `Volgende schip: ${shipLengths[0]}`;
+    }
   }
 }
 
-// --- Rotate ---
-rotateBtn.addEventListener("click",()=>{orientation=orientation==="horizontal"?"vertical":"horizontal";});
+// rotate button
+rotateBtn.addEventListener("click", ()=> {
+  orientation = (orientation === "horizontal") ? "vertical" : "horizontal";
+  rotateBtn.textContent = `Rotate (${orientation})`;
+});
 
-// --- Klaar ---
-readyBtn.addEventListener("click", async ()=>{
-  if(shipsArray.length>0){ alert("Plaats eerst alle schepen!"); return; }
-  phase="waiting";
-  readyBtn.disabled=true;
-  if(!isGuest){
-    await update(ref(db,`lobbies/${lobbyCode}/ready`),{[username]:true});
-    await set(ref(db,`games/${lobbyCode}/${username}`),{ships:placedShips.flat(),shots:{},ready:true});
+// shoot handler for enemy board
+async function shootHandler(x,y){
+  if(phase !== "playing") return;
+  if(!isMyTurn) return;
+  const key = `${x},${y}`;
+  // prevent double shot
+  const myShotsSnap = await get(ref(db, `games/${lobbyCode}/${username}/shots`));
+  const myShotsNow = myShotsSnap.exists() ? myShotsSnap.val() : {};
+  if(myShotsNow[key]) return; // already shot
+  myShotsNow[key] = true;
+  await update(ref(db, `games/${lobbyCode}/${username}/shots`), myShotsNow);
+  // switch turn
+  const gf = await get(ref(db, `games/${lobbyCode}`));
+  const data = gf.val() || {};
+  const other = Object.keys(data).find(k => k !== "turn" && k !== username);
+  if(other) await update(ref(db, `games/${lobbyCode}`), { turn: other });
+}
+
+// render boards and hits/misses
+function renderBoards(data){
+  // opponent shots on my board
+  const oppShots = data[opponent] && data[opponent].shots ? Object.keys(data[opponent].shots) : [];
+  oppShots.forEach(k => {
+    const [x,y] = k.split(",");
+    const cell = [...myBoardDiv.children].find(n => n.dataset.x == x && n.dataset.y == y);
+    if(!cell) return;
+    const wasShip = placedShips.flat().includes(k);
+    if(wasShip){ cell.style.background = "#d9534f"; cell.textContent = "🔥"; } // hit
+    else { cell.style.background = "#4aa3ff"; cell.textContent = "🌊"; } // miss
+  });
+
+  // my shots on enemy board
+  const myShotsNode = data[username] && data[username].shots ? Object.keys(data[username].shots) : [];
+  myShotsNode.forEach(k => {
+    const [x,y] = k.split(",");
+    const cell = [...enemyBoardDiv.children].find(n => n.dataset.x == x && n.dataset.y == y);
+    if(!cell) return;
+    const enemyShips = data[opponent] && data[opponent].ships ? data[opponent].ships : [];
+    if(enemyShips.includes(k)){ cell.style.background = "#d9534f"; cell.textContent = "🔥"; }
+    else { cell.style.background = "#4aa3ff"; cell.textContent = "🌊"; }
+  });
+}
+
+// update turn popup UI
+function updateTurnDisplay(turnName){
+  isMyTurn = (turnName === username);
+  turnPopup.style.display = "block";
+  turnPlayer.textContent = turnName;
+  // color
+  turnPopup.style.background = isMyTurn ? "linear-gradient(90deg,#00e676,#00c853)" : "rgba(0,0,0,0.5)";
+}
+
+// check win condition and redirect to end
+function checkWin(data){
+  if(!data[username] || !data[opponent]) return;
+  const enemyShips = data[opponent].ships || [];
+  const myShotsSet = data[username].shots || {};
+  const enemyHitsCount = enemyShips.filter(s => myShotsSet[s]).length;
+  if(enemyHitsCount === enemyShips.length){
+    // we win
+    if(!isGuest) endGame(username, opponent);
+    phase = "ended";
+    localStorage.setItem("winner", username);
+    setTimeout(()=> location.href="end.html", 900);
+  }
+  // check if opponent sunk all our ships
+  const myShipsFlat = placedShips.flat();
+  const oppShots = data[opponent] && data[opponent].shots ? Object.keys(data[opponent].shots) : [];
+  const hitsOnMe = myShipsFlat.filter(s => oppShots.includes(s)).length;
+  if(hitsOnMe === myShipsFlat.length){
+    if(!isGuest) endGame(opponent, username);
+    phase = "ended";
+    localStorage.setItem("winner", opponent);
+    setTimeout(()=> location.href="end.html", 900);
+  }
+}
+
+// end game update leaderboard
+async function endGame(winner, loser){
+  const wSnap = await get(ref(db, "users/" + winner));
+  const lSnap = await get(ref(db, "users/" + loser));
+  const w = wSnap.exists() ? wSnap.val() : { wins:0, games:0 };
+  const l = lSnap.exists() ? lSnap.val() : { wins:0, games:0 };
+  await update(ref(db, "users/" + winner), { wins: (w.wins||0) + 1, games: (w.games||0) + 1 });
+  await update(ref(db, "users/" + loser), { games: (l.games||0) + 1 });
+}
+
+// listen lobby and game updated states
+onValue(lobbyRef, async (snap) => {
+  const data = snap.val() || {};
+  opponent = (data.host === username) ? data.guest : data.host;
+  // if both ready and both have placed their ships in games node - start playing
+  // Note: lobbyReady handled earlier in lobby.html; here we also watch the games node
+  const gSnap = await get(ref(db, "games/" + lobbyCode));
+  const gdata = gSnap.val() || {};
+  // when both players have a 'ships' array in games node -> show that both placed
+  if(gdata[username] && gdata[opponent] && gdata[username].ships && gdata[opponent].ships){
+    // if local hasn't written our ships yet, make sure they are present
+    if(placedShips.length > 0 && (!gdata[username] || !gdata[username].ships || gdata[username].ships.length===0)){
+      // write our ships
+      await set(ref(db, `games/${lobbyCode}/${username}`), { ships: placedShips.flat(), shots: {} });
+    }
+    // proceed to playing when turn exists or after setting initial turn
+    if(!gdata.turn){
+      // set random first turn
+      const first = Math.random() < 0.5 ? username : opponent;
+      await update(ref(db, `games/${lobbyCode}`), { turn: first });
+    }
+    // set phase playing
+    phase = "playing";
   }
 });
 
-// --- Start spel ---
-function startGame(){
-  lobbyScreen.style.display="none";
-  gameScreen.style.display="block";
-  phase="playing";
-  gameMessage.textContent="Spel gestart!";
+// watch games node for realtime updates to render boards and turn
+onValue(gameRef, (snap) => {
+  const data = snap.val() || {};
+  if(Object.keys(data).length === 0) return;
+  renderBoards(data);
+  if(data.turn) updateTurnDisplay(data.turn);
+  checkWin(data);
+});
 
-  onValue(gameRef,snap=>{
-    const d=snap.val()||{};
-    isMyTurn=d.turn===username;
-    turnInfo.textContent=isMyTurn?"Jij bent aan de beurt!":"Tegenstander is aan de beurt...";
-    renderBoards(d);
-    checkWin(d);
-  });
-
-  // bepaal eerste beurt als nog niet gezet
-  get(gameRef).then(snap=>{
-    const d=snap.val()||{};
-    if(!d.turn){
-      const first = Math.random()<0.5?username:opponent;
-      update(gameRef,{turn:first});
-    }
-  });
-}
-
-// --- Schieten ---
-async function shoot(x,y){
-  if(!isMyTurn || phase!=="playing") return;
-  const key=`${x},${y}`;
-  const myDataSnap = await get(ref(db,`games/${lobbyCode}/${username}/shots`));
-  const myData = myDataSnap.val()||{};
-  if(myData[key]) return;
-
-  myData[key]=true;
-  await update(ref(db,`games/${lobbyCode}/${username}/shots`),myData);
-  await update(gameRef,{turn:opponent});
-}
-
-// --- Render ---
-function renderBoards(data){
-  if(data[opponent]?.shots){
-    Object.keys(data[opponent].shots).forEach(k=>{
-      const [x,y]=k.split(",");
-      const cell=[...myBoardDiv.children].find(c=>c.dataset.x==x && c.dataset.y==y);
-      if(!cell) return;
-      if(placedShips.flat().includes(k)){ cell.style.background="red"; cell.textContent="🔥"; }
-      else { cell.style.background="blue"; cell.textContent="🌊"; }
-    });
-  }
-  if(data[username]?.shots && data[opponent]?.ships){
-    Object.keys(data[username].shots).forEach(k=>{
-      const [x,y]=k.split(",");
-      const cell=[...enemyBoardDiv.children].find(c=>c.dataset.x==x && c.dataset.y==y);
-      if(!cell) return;
-      if(data[opponent].ships.includes(k)){ cell.style.background="red"; cell.textContent="🔥"; }
-      else { cell.style.background="blue"; cell.textContent="🌊"; }
-    });
-  }
-}
-
-// --- Win check ---
-function checkWin(data){
-  if(!data[username]?.ships || !data[opponent]?.ships) return;
-  const enemyShipsLeft = data[opponent].ships.filter(s=>!data[username].shots[s]);
-  const myShipsLeft = placedShips.flat().filter(s=>!data[opponent]?.shots?.[s]);
-  if(enemyShipsLeft.length===0){
-    gameMessage.textContent="🎉 Jij hebt gewonnen!";
-    if(!isGuest) endGame(username, opponent);
-    phase="ended";
-    setTimeout(()=>window.location.href="end.html",2000);
-  } else if(myShipsLeft.length===0){
-    gameMessage.textContent="💀 Je hebt verloren!";
-    if(!isGuest) endGame(opponent, username);
-    phase="ended";
-    setTimeout(()=>window.location.href="end.html",2000);
-  }
-}
-
-// --- Einde spel ---
-async function endGame(winner,loser){
-  const winnerRef = ref(db,"users/"+winner);
-  const loserRef = ref(db,"users/"+loser);
-  const wSnap=await get(winnerRef);
-  const lSnap=await get(loserRef);
-  const wData=wSnap.val();
-  const lData=lSnap.val();
-  await update(winnerRef,{wins:(wData?.wins||0)+1,games:(wData?.games||0)+1});
-  await update(loserRef,{games:(lData?.games||0)+1});
-}
+// navigate to home
+toHome.addEventListener("click", ()=>{
+  window.location.href = "home.html";
+});
