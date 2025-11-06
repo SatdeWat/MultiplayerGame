@@ -1,0 +1,51 @@
+<!-- place-ships.html -->
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <title>Zeeslag — Plaats schepen</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h2>Plaats je schepen</h2>
+      <div><span id="me"></span> — Lobby <strong id="lobbyId"></strong></div>
+    </div>
+
+    <div class="panel">
+      <div class="flex">
+        <div>
+          <div class="title">Jouw bord</div>
+          <div id="boardContainer"></div>
+        </div>
+        <div style="min-width:240px">
+          <div class="title">Instellingen</div>
+          <label>Orientatie:
+            <select id="orient"><option value="h">Horizontaal</option><option value="v">Verticaal</option></select>
+          </label>
+          <br>
+          <label>Schip grootte:
+            <select id="sizeSelect">
+              <option value="5">5</option>
+              <option value="4">4</option>
+              <option value="3">3</option>
+              <option value="2">2</option>
+            </select>
+          </label>
+          <p>Klik op startvak om schip te plaatsen (startpositie). Rechtsklik (of houd) om schip te verwijderen.</p>
+          <div class="flex" style="margin-top:8px">
+            <button id="undo" class="small">Verwijder laatste</button>
+            <button id="reset" class="small">Reset</button>
+            <button id="save" class="small">Opslaan en klaar</button>
+          </div>
+          <p id="placeStatus" style="color:var(--muted); margin-top:8px"></p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="place-ships.js"></script>
+</body>
+</html>
