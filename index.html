@@ -1,24 +1,35 @@
 <!DOCTYPE html>
 <html lang="nl">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>Zeeslag - Login</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<div class="login-container">
+<div class="login-container container center">
   <h1>⚓ Zeeslag ⚓</h1>
-  <input type="text" id="usernameInput" placeholder="Gebruikersnaam">
-  <input type="password" id="passwordInput" placeholder="Wachtwoord">
-  <button id="loginBtn">Login</button>
-  <button id="registerBtn">Register</button>
-  <button id="guestBtn">Speel als gast</button>
-  <p id="loginMessage"></p>
+
+  <input id="usernameInput" type="text" placeholder="Gebruikersnaam" />
+  <input id="passwordInput" type="password" placeholder="Wachtwoord" />
+
+  <div class="row" style="justify-content:center;margin-top:8px;">
+    <button id="loginBtn">Inloggen</button>
+    <button id="registerBtn" class="secondary">Registreren</button>
+  </div>
+
+  <div style="margin-top:10px; text-align:center;">
+    <button id="guestBtn" class="secondary">Speel als gast</button>
+  </div>
+
+  <p id="loginMessage" class="msg"></p>
 </div>
 
 <script type="module">
-import { db, ref, get, set } from "./firebase.js";
+import { dbRef, dbGet, dbSet, db } from "./firebase.js";
+
+// helpers (wrap firebase functions imported names)
+import { dbGet as getDb, dbSet as setDb, dbRef as refDb } from "./firebase.js";
 
 const usernameInput = document.getElementById("usernameInput");
 const passwordInput = document.getElementById("passwordInput");
@@ -27,46 +38,45 @@ const registerBtn = document.getElementById("registerBtn");
 const guestBtn = document.getElementById("guestBtn");
 const loginMessage = document.getElementById("loginMessage");
 
-// Login
+import { dbRef as ref, dbGet as get, dbSet as set } from "./firebase.js";
+
 loginBtn.addEventListener("click", async ()=>{
   const username = usernameInput.value.trim();
   const password = passwordInput.value.trim();
-  if(!username || !password){ loginMessage.textContent="Vul alle velden in!"; return; }
+  loginMessage.textContent="";
+  if(!username || !password){ loginMessage.textContent="Vul gebruikersnaam en wachtwoord in."; return; }
 
-  const userRef = ref(db,"users/"+username);
-  const snap = await get(userRef);
-  if(!snap.exists()){ loginMessage.textContent="Gebruiker bestaat niet!"; return; }
+  const snap = await get(ref(db, "users/" + username));
+  if(!snap.exists()){ loginMessage.textContent="Gebruiker niet gevonden."; return; }
   const data = snap.val();
-  if(data.password !== password){ loginMessage.textContent="Verkeerd wachtwoord!"; return; }
+  if(data.password !== password){ loginMessage.textContent="Onjuist wachtwoord."; return; }
 
   localStorage.setItem("username", username);
   localStorage.setItem("isGuest", "false");
-  window.location.href="home.html";
+  window.location.href = "home.html";
 });
 
-// Register
 registerBtn.addEventListener("click", async ()=>{
   const username = usernameInput.value.trim();
   const password = passwordInput.value.trim();
-  if(!username || !password){ loginMessage.textContent="Vul alle velden in!"; return; }
+  loginMessage.textContent="";
+  if(!username || !password){ loginMessage.textContent="Vul gebruikersnaam en wachtwoord in."; return; }
 
-  const userRef = ref(db,"users/"+username);
-  const snap = await get(userRef);
-  if(snap.exists()){ loginMessage.textContent="Gebruiker bestaat al!"; return; }
+  const snap = await get(ref(db, "users/" + username));
+  if(snap.exists()){ loginMessage.textContent="Gebruiker bestaat al."; return; }
 
-  await set(userRef, {password: password, wins:0, games:0});
+  await set(ref(db,"users/" + username), { password, wins:0, games:0 });
   localStorage.setItem("username", username);
   localStorage.setItem("isGuest", "false");
-  window.location.href="home.html";
+  window.location.href = "home.html";
 });
 
-// Speel als gast
 guestBtn.addEventListener("click", ()=>{
-  const guestName = prompt("Vul een tijdelijke naam in:");
+  const guestName = prompt("Vul een tijdelijke naam in (je score wordt niet opgeslagen):");
   if(!guestName) return;
   localStorage.setItem("username", guestName);
   localStorage.setItem("isGuest", "true");
-  window.location.href="home.html";
+  window.location.href = "home.html";
 });
 </script>
 </body>
