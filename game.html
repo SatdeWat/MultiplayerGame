@@ -5,31 +5,49 @@
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>Zeeslag - Game</title>
 <link rel="stylesheet" href="style.css">
+<style>
+/* Kleine lokale stijl-updates voor game page */
+.board-grid { gap:6px; }
+.cell { transition: background .12s, transform .08s; }
+.cell.preview-valid { background: rgba(0,200,120,0.35) !important; }
+.cell.preview-bad { background: rgba(255,80,80,0.45) !important; }
+.center-controls { display:flex; gap:8px; align-items:center; justify-content:center; margin-top:12px; }
+.power-btn { background: linear-gradient(90deg,#ffb74d,#ff9800); padding:8px 12px; border-radius:10px; }
+.ready-btn { background: linear-gradient(90deg,#66bb6a,#43a047); padding:8px 12px; border-radius:10px; }
+</style>
 </head>
 <body>
 <div class="container">
   <div class="turn-popup" id="turnPopup" style="display:none">Aan de beurt: <strong id="turnPlayer"></strong></div>
 
-  <h1>⚓ Spel</h1>
-  <p id="gameNote" class="msg">Plaats je schepen (1 schip van 5, 1 van 4, 1 van 3). Gebruik Rotate om richting te wisselen.</p>
+  <h1>⚓ Zeeslag - Spel ⚓</h1>
+  <p id="gameNote" class="msg">Plaats je schepen via hover + klik. Gebruik Rotate om richting te wisselen.</p>
 
-  <div class="boards">
+  <div class="boards" style="margin-top:12px;">
     <div class="board-card">
-      <div class="board-title">Jouw Bord</div>
+      <div class="board-title">Jouw Bord (<span id="mySizeLabel">10x10</span>)</div>
       <div id="myBoard" class="board-grid"></div>
-      <div style="margin-top:8px;">
-        <button id="rotateBtn">Rotate (Horiz/Vert)</button>
+      <div class="center-controls">
+        <button id="rotateBtn">Rotate (Horiz)</button>
+        <div id="placeHint" class="msg" style="margin-left:8px;"></div>
+      </div>
+      <div class="center-controls" style="margin-top:8px;">
+        <button id="doneBtn" class="ready-btn" style="display:none">Klaar</button>
       </div>
     </div>
 
     <div class="board-card">
-      <div class="board-title">Tegenstander</div>
+      <div class="board-title">Tegenstander (<span id="enemySizeLabel">10x10</span>)</div>
       <div id="enemyBoard" class="board-grid"></div>
+
+      <div class="center-controls" style="margin-top:12px;">
+        <button id="usePowerBtn" class="power-btn" style="display:none">Use PowerShot (<span id="powerCount">0</span>)</button>
+      </div>
     </div>
   </div>
 
-  <div style="text-align:center; margin-top:12px;">
-    <button id="toHome" class="secondary">Terug naar Home</button>
+  <div style="text-align:center; margin-top:14px;">
+    <button id="backHome" class="secondary">Terug naar Home</button>
   </div>
 </div>
 
