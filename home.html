@@ -32,12 +32,12 @@
     <h3>Lobby Code: <span id="lobbyCodeDisplay"></span></h3>
     <p>Jij: <span id="playerName"></span> ❌</p>
     <p>Tegenstander: <span id="opponentName">Wachten...</span> ❌</p>
-    <p>Wacht tot tegenstander join...</p>
+    <button id="readyBtn">Klaar</button>
   </div>
 </div>
 
 <script type="module">
-import { db, ref, set, get, onValue, update } from "./firebase.js";
+import { db, ref, set, get, update, onValue } from "./firebase.js";
 
 const username = localStorage.getItem("username");
 const isGuest = localStorage.getItem("isGuest") === "true";
@@ -57,24 +57,23 @@ const opponentNameSpan = document.getElementById("opponentName");
 
 const lobbyCodeInput = document.getElementById("lobbyCodeInput");
 const joinLobbyConfirmBtn = document.getElementById("joinLobbyConfirmBtn");
+const readyBtn = document.getElementById("readyBtn");
 
-// --- Knoppen ---
+// Knoppen
 createLobbyBtn.addEventListener("click", ()=>{
   createLobbySection.style.display="block";
   joinLobbySection.style.display="none";
 });
-
 joinLobbyBtn.addEventListener("click", ()=>{
-  createLobbySection.style.display="none";
   joinLobbySection.style.display="block";
+  createLobbySection.style.display="none";
 });
-
 logoutBtn.addEventListener("click", ()=>{
   localStorage.clear();
   window.location.href="index.html";
 });
 
-// --- Gamemode knoppen ---
+// Gamemode select
 document.querySelectorAll(".modeBtn").forEach(btn=>{
   btn.addEventListener("click", ()=>{
     const mode = btn.dataset.mode;
@@ -105,7 +104,7 @@ document.querySelectorAll(".modeBtn").forEach(btn=>{
   });
 });
 
-// --- Join Lobby ---
+// Join Lobby
 joinLobbyConfirmBtn.addEventListener("click", async ()=>{
   const code = lobbyCodeInput.value.trim().toUpperCase();
   const lobbyRef = ref(db,"lobbies/"+code);
@@ -113,13 +112,12 @@ joinLobbyConfirmBtn.addEventListener("click", async ()=>{
   if(!snap.exists()){ alert("Lobby niet gevonden!"); return; }
   const data = snap.val();
   if(data.guest){ alert("Lobby vol!"); return; }
-
   await update(lobbyRef, {guest: username});
   localStorage.setItem("lobbyCode",code);
   showLobbyScreen(code);
 });
 
-// --- Lobby scherm tonen ---
+// Lobby scherm tonen
 function showLobbyScreen(code){
   createLobbySection.style.display="none";
   joinLobbySection.style.display="none";
@@ -130,17 +128,23 @@ function showLobbyScreen(code){
   const lobbyRef = ref(db,"lobbies/"+code);
   onValue(lobbyRef, snap=>{
     const data = snap.val();
-    opponentNameSpan.textContent = data.guest || "Wachten...";
-    // Klaar-status
+    const opp = (data.host===username)?data.guest:data.host;
+    opponentNameSpan.textContent = (opp || "Wachten...") + ((data.ready?.[opp])?" ✅":" ❌");
     playerNameSpan.textContent=username + (data.ready?.[username]?" ✅":" ❌");
-    opponentNameSpan.textContent=(data.guest || "Wachten...") + (data.ready?.[data.guest]?" ✅":" ❌");
 
-    // Beide klaar? -> game.html
-    if(data.ready?.[username] && data.ready?.[data.guest]){
+    if(data.ready?.[username] && data.ready?.[opp]){
       window.location.href="game.html";
     }
   });
 }
+
+// Klaar knop
+readyBtn.addEventListener("click", async ()=>{
+  const code = localStorage.getItem("lobbyCode");
+  const lobbyRef = ref(db,"lobbies/"+code+"/ready");
+  await update(lobbyRef, {[username]:true});
+  readyBtn.disabled=true;
+});
 </script>
 </body>
 </html>
