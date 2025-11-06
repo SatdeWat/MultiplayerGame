@@ -1,20 +1,73 @@
-<!DOCTYPE html>
+<!-- index.html -->
+<!doctype html>
 <html lang="nl">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>Zeeslag</title>
-<link rel="stylesheet" href="styles.css">
+  <meta charset="utf-8">
+  <title>Zeeslag — Login</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<div class="login-container">
-  <h1>Zeeslag Online</h1>
-  <input type="text" id="username" placeholder="Username">
-  <input type="password" id="pincode" placeholder="Pincode">
-  <button id="btn-register">Registreren</button>
-  <button id="btn-login">Inloggen</button>
-  <button id="btn-guest">Gast</button>
-</div>
-<script type="module" src="login.js"></script>
+  <div class="container">
+    <div class="header">
+      <h1>Zeeslag Multiplayer</h1>
+      <div>Host: <strong>GitHub → Google Sites</strong></div>
+    </div>
+
+    <div class="panel">
+      <div class="title">Inloggen / Registreren</div>
+      <div class="flex">
+        <input id="username" placeholder="Gebruikersnaam (geen spaties)">
+        <input id="code" type="password" placeholder="Pincode (4+ tekens)">
+      </div>
+      <div class="flex" style="margin-top:10px">
+        <button id="btnRegister" class="small">Registreren</button>
+        <button id="btnLogin" class="small">Inloggen</button>
+        <button id="btnGuest" class="small">Start als gast</button>
+      </div>
+      <p id="msg" style="margin-top:10px;color:var(--muted)"></p>
+    </div>
+
+    <p class="footer">Na inloggen ga je naar de lobby → maak of join een game. Succes!</p>
+  </div>
+
+  <script type="module">
+    import { db, dbRef, dbGet, dbSet } from './firebase.js';
+
+    const username = document.getElementById('username');
+    const code = document.getElementById('code');
+    const msg = document.getElementById('msg');
+
+    function show(m){ msg.textContent = m; setTimeout(()=> msg.textContent='',3500); }
+
+    document.getElementById('btnRegister').addEventListener('click', async ()=>{
+      const name = username.value.trim();
+      const pin = code.value.trim();
+      if(!name || name.includes(' ')) return show('Gebruikersnaam zonder spaties verplicht.');
+      if(!pin || pin.length<4) return show('Pincode: minstens 4 tekens.');
+      const snap = await dbGet(dbRef(db, 'users/' + name));
+      if(snap.exists()) return show('Gebruikersnaam bestaat al.');
+      await dbSet(dbRef(db, 'users/' + name), { username: name, code: pin });
+      localStorage.setItem('player', name);
+      location.href='lobby.html';
+    });
+
+    document.getElementById('btnLogin').addEventListener('click', async ()=>{
+      const name = username.value.trim();
+      const pin = code.value.trim();
+      if(!name) return show('Vul gebruikersnaam in.');
+      const snap = await dbGet(dbRef(db, 'users/' + name));
+      if(!snap.exists()) return show('Gebruiker niet gevonden.');
+      if(snap.val().code !== pin) return show('Foute pincode.');
+      localStorage.setItem('player', name);
+      location.href='lobby.html';
+    });
+
+    document.getElementById('btnGuest').addEventListener('click', ()=>{
+      const gname = 'Gast' + Math.floor(Math.random()*9000+1000);
+      localStorage.setItem('player', gname);
+      location.href='lobby.html';
+    });
+  </script>
 </body>
 </html>
