@@ -13,7 +13,7 @@ const username = localStorage.getItem("username");
 const lobbyCode = localStorage.getItem("lobbyCode");
 if (!username || !lobbyCode) location.href = "home.html";
 
-// DOM nodes (afhankelijk van jouw HTML)
+// DOM elements from your HTML
 const myBoardDiv = document.getElementById("myBoard");
 const enemyBoardDiv = document.getElementById("enemyBoard");
 const rotateBtn = document.getElementById("rotateBtn");
@@ -28,7 +28,7 @@ const usePowerBtn = document.getElementById("usePowerBtn");
 const powerCountSpan = document.getElementById("powerCount");
 const placeHint = document.getElementById("placeHint");
 
-// board-title parents in your HTML (used for ready tick)
+// board title nodes (we'll add ready-indicator spans here)
 const myBoardCard = myBoardDiv.closest(".board-card");
 const enemyBoardCard = enemyBoardDiv.closest(".board-card");
 const myBoardTitle = myBoardCard ? myBoardCard.querySelector(".board-title") : null;
@@ -38,9 +38,9 @@ const enemyBoardTitle = enemyBoardCard ? enemyBoardCard.querySelector(".board-ti
 const lobbyRef = ref(db, `lobbies/${lobbyCode}`);
 const gameRef = ref(db, `games/${lobbyCode}`);
 
-// game state
+// state
 let lobbyData = null;
-let opponent = null; // opponent username
+let opponent = null;
 let size = 10;
 let mode = "classic";
 let orientation = "horizontal";
@@ -48,97 +48,157 @@ let shipLengths = [];
 let placedShips = []; // array of arrays of "x,y"
 let phase = "placing"; // placing -> waiting -> playing -> ended
 let myPowerShots = 0;
+let usingPowerMode = false;
 
-// adjust cell size to fit two boards side-by-side (change if needed)
-const CELL_PX = 30; // smaller so two grids fit next to each other
+// cell size small so two boards fit side-by-side
+const CELL_PX = 30; // you can tweak (30 fits two 10x10/15x15 usually)
 
-// maps board size to ships
-function shipsForSize(bs) {
-  if (bs === 10) return [5, 4, 3];
-  if (bs === 15) return [5, 4, 3, 3];
-  if (bs === 20) return [5, 4, 4, 3, 3, 2];
+// mapping size -> ships
+function shipsForSize(boardSize) {
+  if (boardSize === 10) return [5, 4, 3];
+  if (boardSize === 15) return [5, 4, 3, 3];
+  if (boardSize === 20) return [5, 4, 4, 3, 3, 2];
   return [5, 4, 3];
 }
 
+// ---------- UI Helpers ----------
+function ensureReadyIndicator(titleEl) {
+  if (!titleEl) return null;
+  let span = titleEl.querySelector(".ready-indicator");
+  if (!span) {
+    span = document.createElement("span");
+    span.className = "ready-indicator";
+    span.style.marginLeft = "8px";
+    span.style.fontWeight = "700";
+    titleEl.appendChild(span);
+  }
+  return span;
+}
+function setReadyIndicator(titleEl, ready) {
+  const span = ensureReadyIndicator(titleEl);
+  if (!span) return;
+  span.textContent = ready ? "✅" : "";
+}
+
+function showTurnPopup(text) {
+  if (!turnPopup) return;
+  // keep original HTML: "Aan de beurt: <strong id='turnPlayer'></strong>"
+  if (text === "Game starts!") {
+    turnPopup.innerHTML = `<strong>${text}</strong>`;
+  } else {
+    // ensure strong exists
+    turnPopup.innerHTML = `Aan de beurt: <strong id="turnPlayer">${text === username ? "Jij" : text}</strong>`;
+  }
+  turnPopup.style.display = "block";
+  setTimeout(() => { if (turnPopup) turnPopup.style.display = "none"; }, 2500);
+}
+
+function showStartThenTurn(first) {
+  showTurnPopup("Game starts!");
+  setTimeout(() => showTurnPopup(first === username ? "Jij" : first), 1400);
+}
+
+let endModalEl = null;
+function showEndModal(winnerText) {
+  if (!endModalEl) {
+    endModalEl = document.createElement("div");
+    endModalEl.style.position = "fixed";
+    endModalEl.style.left = "50%";
+    endModalEl.style.top = "24%";
+    endModalEl.style.transform = "translateX(-50%)";
+    endModalEl.style.zIndex = "9999";
+    endModalEl.style.background = "#fff";
+    endModalEl.style.padding = "18px";
+    endModalEl.style.borderRadius = "10px";
+    endModalEl.style.boxShadow = "0 12px 36px rgba(0,0,0,0.25)";
+    endModalEl.style.textAlign = "center";
+    document.body.appendChild(endModalEl);
+  }
+  endModalEl.innerHTML = `<div style="font-weight:700;font-size:18px;margin-bottom:8px">${winnerText} heeft gewonnen!</div>`;
+  const remBtn = document.createElement("button");
+  remBtn.textContent = "Rematch";
+  remBtn.style.padding = "8px 12px";
+  remBtn.style.borderRadius = "8px";
+  remBtn.addEventListener("click", async () => {
+    await update(ref(db, `games/${lobbyCode}/rematchRequests`), { [username]: true });
+    const s = document.createElement("div"); s.textContent = "Wachten op tegenstander..."; s.style.marginTop = "8px";
+    endModalEl.appendChild(s);
+  });
+  endModalEl.appendChild(remBtn);
+  endModalEl.style.display = "block";
+}
+function hideEndModal() { if (endModalEl) endModalEl.style.display = "none"; }
+
 // ---------- init ----------
 (async function init() {
-  // ensure the .boards container shows two boards side-by-side
+  // Ensure boards container is flex (side-by-side)
   const boardsContainer = document.querySelector(".boards");
   if (boardsContainer) {
     boardsContainer.style.display = "flex";
-    boardsContainer.style.gap = "28px";
+    boardsContainer.style.gap = "18px";
     boardsContainer.style.alignItems = "flex-start";
   }
 
-  // read lobby info
-  const snap = await get(lobbyRef);
-  if (!snap.exists()) {
-    alert("Lobby niet gevonden.");
-    location.href = "home.html";
-    return;
-  }
-  lobbyData = snap.val();
+  // fetch lobby data
+  const s = await get(lobbyRef);
+  if (!s.exists()) { alert("Lobby niet gevonden."); location.href = "home.html"; return; }
+  lobbyData = s.val();
   size = lobbyData.size || 10;
   mode = lobbyData.mode || "classic";
   shipLengths = shipsForSize(size);
+
+  // determine opponent if possible
   opponent = (lobbyData.host === username) ? lobbyData.guest : lobbyData.host;
 
   mySizeLabel.textContent = `${size}x${size}`;
   enemySizeLabel.textContent = `${size}x${size}`;
-  placeHint.textContent = `Plaats schip van lengte ${shipLengths[0]}`;
 
-  // add ready-indicator spans to titles if missing
-  if (myBoardTitle && !myBoardTitle.querySelector(".ready-indicator")) {
-    const s = document.createElement("span");
-    s.className = "ready-indicator";
-    s.style.marginLeft = "8px";
-    myBoardTitle.appendChild(s);
-  }
-  if (enemyBoardTitle && !enemyBoardTitle.querySelector(".ready-indicator")) {
-    const s = document.createElement("span");
-    s.className = "ready-indicator";
-    s.style.marginLeft = "8px";
-    enemyBoardTitle.appendChild(s);
-  }
+  // ensure ready indicators exist
+  ensureReadyIndicator(myBoardTitle);
+  ensureReadyIndicator(enemyBoardTitle);
 
   // create boards
   createBoard(myBoardDiv, size, true, onMyCellEvent);
   createBoard(enemyBoardDiv, size, false, onEnemyCellClick);
 
   rotateBtn.textContent = `Rotate (${orientation})`;
+  placeHint.textContent = `Plaats schip van lengte ${shipLengths[0]}`;
 
-  // ensure games node exists when both players present
-  onValue(lobbyRef, async (lsnap) => {
-    const data = lsnap.val() || {};
+  // ensure games node exists when two players present
+  onValue(lobbyRef, async (snap) => {
+    const data = snap.val() || {};
     lobbyData = data;
     opponent = (data.host === username) ? data.guest : data.host;
     if (data.host && data.guest) {
-      const gsnap = await get(gameRef);
-      if (!gsnap.exists()) {
-        // initialize games node with both players (don't overwrite if exists)
-        const obj = {
+      const gs = await get(gameRef);
+      if (!gs.exists()) {
+        await set(gameRef, {
           [data.host]: { ships: [], shots: {} },
           [data.guest]: { ships: [], shots: {} },
           turn: null,
           rematchRequests: {}
-        };
-        await set(gameRef, obj);
+        });
       }
     }
   });
 
-  // listen to games node
-  onValue(gameRef, (gsnap) => {
-    const data = gsnap.val() || {};
+  // main listener for game state
+  onValue(gameRef, async (snap) => {
+    const data = snap.val() || {};
     if (!data) return;
 
-    // ensure opponent is set if not known
-    if (!opponent) {
-      const keys = Object.keys(data).filter(k => k !== "turn" && k !== "rematchRequests");
-      opponent = keys.find(k => k !== username) || opponent;
+    // Determine players present under games node (robust)
+    const playerKeys = Object.keys(data).filter(k => k !== "turn" && k !== "rematchRequests");
+    if (playerKeys.length >= 2) {
+      // set opponent if unknown or changed
+      if (!opponent) opponent = playerKeys.find(k => k !== username);
+      else {
+        // ensure opponent exists in this node
+        if (!playerKeys.includes(opponent)) opponent = playerKeys.find(k => k !== username);
+      }
     }
 
-    // update power count UI from DB
+    // update myPowerShots if present
     const meNode = data[username] || {};
     if (meNode.powerShots !== undefined) {
       myPowerShots = meNode.powerShots || 0;
@@ -146,65 +206,57 @@ function shipsForSize(bs) {
       usePowerBtn.style.display = myPowerShots > 0 ? "inline-block" : "none";
     }
 
-    // adopt ships from DB if we navigated back and placed previously
-    if (meNode.ships && placedShips.length === 0 && Array.isArray(meNode.ships) && meNode.ships.length > 0) {
+    // adopt ships if we had them in DB and local absent (e.g., reload)
+    if (meNode.ships && Array.isArray(meNode.ships) && meNode.ships.length > 0 && placedShips.length === 0) {
       placedShips = meNode.ships.slice();
-      // render placed ships on my board
       placedShips.forEach(ship => ship.forEach(coord => {
         const c = findCell(myBoardDiv, coord);
         if (c) { c.style.background = "#4caf50"; c.textContent = "🚢"; }
       }));
-      shipLengths = []; // nothing left to place
+      shipLengths = [];
       doneBtn.style.display = "none";
       rotateBtn.style.display = "none";
-      setReadyIndicator(myBoardTitle, !!meNode.ready);
     }
 
-    // update ready indicators for both players
+    // set ready indicators (both)
     const oppNode = data[opponent] || {};
     setReadyIndicator(myBoardTitle, !!(meNode && meNode.ready));
     setReadyIndicator(enemyBoardTitle, !!(oppNode && oppNode.ready));
 
-    // render board visuals (shots/hits)
+    // render boards (shots/hits)
     renderBoards(data);
 
-    // if both ready and not playing -> start (set turn if missing)
+    // If both ready -> start play (only transition once)
     if (meNode && oppNode && meNode.ready && oppNode.ready && phase !== "playing") {
+      // set random turn if missing
       if (!data.turn) {
         const first = Math.random() < 0.5 ? username : opponent;
-        update(gameRef, { turn: first }).catch(() => {});
+        await update(gameRef, { turn: first });
         showStartThenTurn(first);
       } else {
         showStartThenTurn(data.turn);
       }
       phase = "playing";
       gameNote.textContent = "Spel gestart!";
-      // hide rotate locally as well
-      rotateBtn.style.display = "none";
+      // hide rotate locally (in case)
+      if (rotateBtn) rotateBtn.style.display = "none";
     }
 
-    // show who has the turn (popup)
+    // show turn popup when turn exists (every update briefly shows it)
     if (data.turn) {
-      showTurnPopup(data.turn);
+      showTurnPopup(data.turn === username ? "Jij" : data.turn);
     }
 
-    // detect winner
-    const winner = detectWinner(data);
-    if (winner && phase !== "ended") {
-      phase = "ended";
-      showEndModal(winner === username ? "Jij" : winner);
-    }
-
-    // rematch handling: both requested -> DB reset handled elsewhere (simple)
+    // rematch handling: both requested -> reset DB and local state
     const remReq = data.rematchRequests || {};
     if (remReq[username] && remReq[opponent]) {
-      // reset DB state for new placement round
-      set(gameRef, {
+      // reset DB
+      await set(gameRef, {
         [lobbyData.host]: { ships: [], shots: {}, ready: false, powerShots: 0 },
         [lobbyData.guest]: { ships: [], shots: {}, ready: false, powerShots: 0 },
         turn: null,
         rematchRequests: {}
-      }).catch(() => {});
+      });
       // reset local
       placedShips = [];
       shipLengths = shipsForSize(size);
@@ -216,21 +268,28 @@ function shipsForSize(bs) {
       createBoard(myBoardDiv, size, true, onMyCellEvent);
       createBoard(enemyBoardDiv, size, false, onEnemyCellClick);
     }
+
+    // detect winner
+    const winner = detectWinner(data);
+    if (winner && phase !== "ended") {
+      phase = "ended";
+      showEndModal(winner === username ? "Jij" : winner);
+    }
   });
 
-  // rotate button
+  // rotate handler
   rotateBtn.addEventListener("click", () => {
     orientation = orientation === "horizontal" ? "vertical" : "horizontal";
     rotateBtn.textContent = `Rotate (${orientation})`;
   });
 
-  // done button writes ships + ready to DB
+  // done handler: write ships + ready to DB and hide rotate locally
   doneBtn.addEventListener("click", async () => {
     if (shipLengths.length > 0) {
       alert(`Plaats eerst alle schepen! Nog: ${shipLengths.join(", ")}`);
       return;
     }
-    // write our ships & ready (use update so we don't clobber other fields accidentally)
+    // write/update our node in games
     await update(ref(db, `games/${lobbyCode}/${username}`), {
       ships: placedShips.slice(),
       shots: {},
@@ -239,20 +298,20 @@ function shipsForSize(bs) {
     });
     phase = "waiting";
     doneBtn.style.display = "none";
-    rotateBtn.style.display = "none";
+    if (rotateBtn) rotateBtn.style.display = "none";
     placeHint.textContent = "Wachten op tegenstander...";
     setReadyIndicator(myBoardTitle, true);
   });
 
-  // use power (client side)
   usePowerBtn.addEventListener("click", () => {
     if (myPowerShots <= 0) return;
     usingPowerMode = true;
-    usePowerBtn.textContent = "Kies 3x3 target...";
     usePowerBtn.disabled = true;
+    usePowerBtn.textContent = "Kies 3x3 target...";
   });
 
   backHome.addEventListener("click", () => { location.href = "home.html"; });
+
 })();
 
 // ---------- board creation ----------
@@ -290,19 +349,19 @@ function createBoard(container, gridSize, clickable = false, handler = null) {
 }
 
 // ---------- placing handler ----------
-let usingPowerMode = false;
-
 function onMyCellEvent(x, y, type, cellEl) {
   if (phase !== "placing" && phase !== "waiting") return;
   if (shipLengths.length === 0) return;
-  const len = shipLengths[0];
+  const length = shipLengths[0];
+  // compute prospective coords
   const coords = [];
-  for (let i = 0; i < len; i++) {
+  for (let i = 0; i < length; i++) {
     const cx = x + (orientation === "horizontal" ? i : 0);
     const cy = y + (orientation === "vertical" ? i : 0);
     if (cx >= size || cy >= size) { coords.length = 0; break; }
     coords.push(`${cx},${cy}`);
   }
+
   if (type === "enter") {
     const overlap = coords.some(c => placedShips.flat().includes(c));
     coords.forEach(coord => {
@@ -330,14 +389,14 @@ async function onEnemyCellClick(x, y, type, cellEl) {
   if (type !== "click") return;
   if (phase !== "playing") return;
   if (!opponent) return;
-  // check turn in DB
+  // check turn from DB
   const gsnap = await get(gameRef);
   const g = gsnap.val() || {};
   if (!g.turn) return;
   if (g.turn !== username) return; // not your turn
 
   if (usingPowerMode) {
-    // 3x3
+    // 3x3 shots
     const toShot = [];
     for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
       const sx = x + dx, sy = y + dy;
@@ -358,6 +417,7 @@ async function onEnemyCellClick(x, y, type, cellEl) {
     return;
   }
 
+  // normal single shot
   const key = `${x},${y}`;
   const shotsRef = ref(db, `games/${lobbyCode}/${username}/shots`);
   const snapShots = await get(shotsRef);
@@ -368,7 +428,7 @@ async function onEnemyCellClick(x, y, type, cellEl) {
   await resolveTurnAfterShots(current, false);
 }
 
-// ---------- determine hits and turn ----------
+// ---------- hit & turn resolve ----------
 function didShotHit(shotsObj, opponentShipsGrouped) {
   for (let si = 0; si < opponentShipsGrouped.length; si++) {
     const ship = opponentShipsGrouped[si];
@@ -395,8 +455,8 @@ async function resolveTurnAfterShots(myShotsObj, wasPowerShot) {
       await update(gameRef, { turn: opponent });
     }
   } else {
+    // power mode: grant power on sunk
     if (result.sunkIndex !== null && mode === "power") {
-      // grant powershot
       const selfRef = ref(db, `games/${lobbyCode}/${username}`);
       const selfSnap = await get(selfRef);
       const selfData = selfSnap.exists() ? selfSnap.val() : {};
@@ -404,31 +464,32 @@ async function resolveTurnAfterShots(myShotsObj, wasPowerShot) {
       await update(selfRef, { powerShots: nowPower });
       myPowerShots = nowPower;
     }
+    // switch turn
     await update(gameRef, { turn: opponent });
   }
 }
 
-// ---------- render boards ----------
+// ---------- render ----------
 function renderBoards(data) {
   const myNode = data[username] || {};
   const oppNode = data[opponent] || {};
 
-  // my board: clear non-placed
-  [...myBoardDiv.children].forEach(c => {
-    const key = `${c.dataset.x},${c.dataset.y}`;
+  // my board - reset non-placed
+  [...myBoardDiv.children].forEach(cell => {
+    const key = `${cell.dataset.x},${cell.dataset.y}`;
     if (!placedShips.flat().includes(key)) {
-      c.style.background = "rgba(255,255,255,0.03)";
-      c.textContent = "";
+      cell.style.background = "rgba(255,255,255,0.03)";
+      cell.textContent = "";
     }
   });
-  // mark placed ships
+  // show placed ships
   placedShips.flat().forEach(k => {
     const c = findCell(myBoardDiv, k);
     if (c) { c.style.background = "#4caf50"; c.textContent = "🚢"; }
   });
 
   // opponent shots on my board
-  const oppShots = oppNode && oppNode.shots ? Object.keys(oppNode.shots) : [];
+  const oppShots = (oppNode && oppNode.shots) ? Object.keys(oppNode.shots) : [];
   oppShots.forEach(k => {
     const c = findCell(myBoardDiv, k);
     if (!c) return;
@@ -436,9 +497,9 @@ function renderBoards(data) {
     else { c.style.background = "#4aa3ff"; c.textContent = "🌊"; }
   });
 
-  // enemy board: reset visuals
+  // enemy board - reset
   [...enemyBoardDiv.children].forEach(c => { c.style.background = "rgba(255,255,255,0.03)"; c.textContent = ""; });
-  const myShots = myNode && myNode.shots ? Object.keys(myNode.shots) : [];
+  const myShots = (myNode && myNode.shots) ? Object.keys(myNode.shots) : [];
   myShots.forEach(k => {
     const c = findCell(enemyBoardDiv, k);
     if (!c) return;
@@ -449,91 +510,24 @@ function renderBoards(data) {
   });
 }
 
-// ---------- turn popup helpers ----------
-function showTurnPopup(name) {
-  if (!turnPopup) return;
-  if (name === "Game starts!") {
-    turnPopup.innerHTML = `<strong>${name}</strong>`;
-  } else {
-    // keep the original "Aan de beurt:" text in HTML; replace strong content
-    const strong = turnPopup.querySelector("strong#turnPlayer") || turnPlayer;
-    strong.textContent = (name === username ? "Jij" : name);
-  }
-  turnPopup.style.display = "block";
-  setTimeout(() => { if (turnPopup) turnPopup.style.display = "none"; }, 2500);
-}
-
-function showStartThenTurn(first) {
-  if (!turnPopup) return;
-  turnPopup.innerHTML = `<strong>Game starts!</strong>`;
-  turnPopup.style.display = "block";
-  setTimeout(() => {
-    turnPopup.innerHTML = `Aan de beurt: <strong id="turnPlayer">${first === username ? "Jij" : first}</strong>`;
-    setTimeout(() => { if (turnPopup) turnPopup.style.display = "none"; }, 2200);
-  }, 1200);
-}
-
-// ---------- ready indicator ----------
-function setReadyIndicator(titleEl, ready) {
-  if (!titleEl) return;
-  let span = titleEl.querySelector(".ready-indicator");
-  if (!span) {
-    span = document.createElement("span");
-    span.className = "ready-indicator";
-    span.style.marginLeft = "8px";
-    titleEl.appendChild(span);
-  }
-  span.textContent = ready ? "✅" : "";
-}
-
-// ---------- win detection ----------
-function detectWinner(gdata) {
-  if (!gdata) return null;
-  const playerKeys = Object.keys(gdata).filter(k => k !== "turn" && k !== "rematchRequests");
+// ---------- winner detection ----------
+function detectWinner(data) {
+  if (!data) return null;
+  const playerKeys = Object.keys(data).filter(k => k !== "turn" && k !== "rematchRequests");
   if (playerKeys.length < 2) return null;
-  const [a, b] = playerKeys;
-  const aShips = (gdata[a] && Array.isArray(gdata[a].ships)) ? gdata[a].ships.flat() : [];
-  const bShips = (gdata[b] && Array.isArray(gdata[b].ships)) ? gdata[b].ships.flat() : [];
-  const aShots = (gdata[a] && gdata[a].shots) ? gdata[a].shots : {};
-  const bShots = (gdata[b] && gdata[b].shots) ? gdata[b].shots : {};
-  const aAllSunk = aShips.length > 0 && aShips.every(c => !!bShots[c]);
-  const bAllSunk = bShips.length > 0 && bShips.every(c => !!aShots[c]);
-  if (aAllSunk) return b;
-  if (bAllSunk) return a;
+  const [pA, pB] = playerKeys;
+  const aShips = (data[pA] && Array.isArray(data[pA].ships)) ? data[pA].ships.flat() : [];
+  const bShips = (data[pB] && Array.isArray(data[pB].ships)) ? data[pB].ships.flat() : [];
+  const aShots = (data[pA] && data[pA].shots) ? data[pA].shots : {};
+  const bShots = (data[pB] && data[pB].shots) ? data[pB].shots : {};
+  const aSunk = aShips.length > 0 && aShips.every(c => !!bShots[c]);
+  const bSunk = bShips.length > 0 && bShips.every(c => !!aShots[c]);
+  if (aSunk) return pB;
+  if (bSunk) return pA;
   return null;
 }
 
-// ---------- end modal & rematch ----------
-let endModalEl = null;
-function showEndModal(winnerName) {
-  if (!endModalEl) {
-    endModalEl = document.createElement("div");
-    endModalEl.style.position = "fixed";
-    endModalEl.style.left = "50%";
-    endModalEl.style.top = "25%";
-    endModalEl.style.transform = "translateX(-50%)";
-    endModalEl.style.zIndex = "9999";
-    endModalEl.style.background = "#fff";
-    endModalEl.style.padding = "18px 22px";
-    endModalEl.style.borderRadius = "10px";
-    endModalEl.style.boxShadow = "0 12px 40px rgba(0,0,0,0.25)";
-    endModalEl.style.textAlign = "center";
-
-    const h = document.createElement("div"); h.id = "endTitle"; h.style.fontWeight = "700"; h.style.fontSize = "18px"; h.style.marginBottom = "10px";
-    endModalEl.appendChild(h);
-
-    const rem = document.createElement("button"); rem.textContent = "Rematch"; rem.style.padding = "8px 12px"; rem.style.borderRadius = "8px";
-    rem.addEventListener("click", async () => {
-      await update(ref(db, `games/${lobbyCode}/rematchRequests`), { [username]: true });
-      const s = document.createElement("div"); s.textContent = "Wachten op tegenstander..."; s.style.marginTop = "8px"; endModalEl.appendChild(s);
-    });
-    endModalEl.appendChild(rem);
-    document.body.appendChild(endModalEl);
-  }
-  endModalEl.querySelector("#endTitle").textContent = `${winnerName} heeft gewonnen!`;
-  endModalEl.style.display = "block";
-}
-
+// ---------- end modal ----------
 function hideEndModal() { if (endModalEl) endModalEl.style.display = "none"; }
 
 // ---------- util ----------
