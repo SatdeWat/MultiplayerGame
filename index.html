@@ -1,153 +1,47 @@
-<!-- index.html -->
-<!doctype html>
+<!DOCTYPE html>
 <html lang="nl">
 <head>
-  <meta charset="utf-8">
-  <title>Zeeslag — Home</title>
-  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta charset="UTF-8" />
+  <title>Zeeslag - Inloggen</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <div class="container">
-    <div class="header">
-      <div class="brand">
-        <div class="logo">ZS</div>
-        <div>
-          <div class="title">Zeeslag — Multiplayer</div>
-          <div style="color:rgba(232,246,255,0.65)">Speel realtime via Firebase</div>
-        </div>
-      </div>
-      <div class="nav">
-        <span id="userLabel" style="color:var(--accent);font-weight:700"></span>
-        <button id="btnLogin" class="btn ghost small">Login / Register</button>
-        <button id="btnLogout" class="btn ghost small hide">Logout</button>
-      </div>
-    </div>
-
-    <div class="panel" style="margin-top:18px">
-      <div class="grid">
-        <div class="flex" style="justify-content:space-between;align-items:center">
-          <div>
-            <div style="font-size:18px;font-weight:800">Start een nieuwe lobby</div>
-            <div style="color:rgba(232,246,255,0.7)">Kies gamemode en bordgrootte (schepen worden automatisch ingesteld)</div>
-          </div>
-          <div class="flex">
-            <select id="modeSelect" class="select">
-              <option value="classic">Classic</option>
-              <option value="streak">Streak</option>
-              <option value="power">Power</option>
-            </select>
-
-            <select id="sizeSelect" class="select">
-              <option value="10">10×10 — 3 schepen</option>
-              <option value="15" selected>15×15 — 4 schepen</option>
-              <option value="20">20×20 — 6 schepen</option>
-            </select>
-
-            <button id="btnCreate" class="btn small">Maak lobby</button>
-          </div>
-        </div>
-
-        <div class="flex" style="justify-content:space-between;align-items:center">
-          <div>
-            <div style="font-size:18px;font-weight:800">Join lobby</div>
-            <div style="color:rgba(232,246,255,0.7)">Voer ontvangen code in</div>
-          </div>
-          <div class="flex">
-            <input id="joinCode" placeholder="Lobby code" class="select">
-            <button id="btnJoin" class="btn small">Join</button>
-          </div>
-        </div>
-
-        <div class="flex" style="justify-content:space-between;align-items:center">
-          <div>
-            <div style="font-size:18px;font-weight:800">Leaderboard</div>
-            <div style="color:rgba(232,246,255,0.7)">Bekijk top spelers</div>
-          </div>
-          <div class="flex">
-            <button id="btnLeaderboard" class="btn small">Leaderboard</button>
-          </div>
-        </div>
-
-        <div id="createResult" style="color:var(--accent2);font-weight:800"></div>
-      </div>
-    </div>
-
-    <div class="footer">Tip: registreer via Login voor je naam te bewaren.</div>
+  <div class="container center">
+    <h1>⚓ Zeeslag Online ⚓</h1>
+    <input id="username" placeholder="Gebruikersnaam">
+    <input id="pincode" type="number" placeholder="Pincode (bijv. 1234)">
+    <button id="loginBtn">Login / Registreer</button>
+    <button id="guestBtn" class="secondary">Speel als gast</button>
   </div>
 
   <script type="module">
-    import { db, dbRef, dbSet, dbGet, dbOnValue } from './firebase.js';
+    import { db, ref, get, set, update } from "./firebase.js";
 
-    const player = localStorage.getItem('player');
-    const userLabel = document.getElementById('userLabel');
-    const btnLogin = document.getElementById('btnLogin');
-    const btnLogout = document.getElementById('btnLogout');
+    document.getElementById('loginBtn').onclick = async () => {
+      const name = username.value.trim();
+      const pin = pincode.value.trim();
+      if (!name || !pin) return alert("Vul alles in!");
 
-    function updateUserUI(){
-      const p = localStorage.getItem('player');
-      if(p){ userLabel.textContent = p; btnLogin.classList.add('hide'); btnLogout.classList.remove('hide'); }
-      else { userLabel.textContent = ''; btnLogin.classList.remove('hide'); btnLogout.classList.add('hide'); }
-    }
-    updateUserUI();
+      const snap = await get(ref(db, "users/" + name));
+      if (snap.exists() && snap.val().pincode != pin) {
+        alert("Foute pincode!");
+        return;
+      }
 
-    btnLogin.addEventListener('click', ()=> location.href='login.html');
-    btnLogout.addEventListener('click', ()=> { localStorage.removeItem('player'); updateUserUI(); });
+      await set(ref(db, "users/" + name), {
+        pincode: pin,
+        wins: snap.exists() ? snap.val().wins || 0 : 0,
+        games: snap.exists() ? snap.val().games || 0 : 0
+      });
 
-    document.getElementById('btnLeaderboard').addEventListener('click', ()=> location.href='leaderboard.html');
+      localStorage.setItem("username", name);
+      window.location.href = "home.html";
+    };
 
-    function makeCode(){ return Math.floor(1000 + Math.random()*9000).toString(); }
-
-    function defaultShipSetForSize(sz){
-      // return array of ship lengths
-      if(sz==10) return [4,3,3];        // 3 ships
-      if(sz==15) return [5,4,3,2];      // 4 ships
-      return [5,4,3,3,2,2];             // 6 ships for 20x20
-    }
-
-    document.getElementById('btnCreate').addEventListener('click', async ()=>{
-      const playerName = localStorage.getItem('player') || ('Gast' + Math.floor(Math.random()*9000+1000));
-      const mode = document.getElementById('modeSelect').value;
-      const size = parseInt(document.getElementById('sizeSelect').value,10);
-      const code = makeCode();
-      const shipSet = defaultShipSetForSize(size);
-      const lobbyObj = {
-        players: { host: playerName },
-        status: 'waiting',
-        mode,
-        size,
-        shipSet,
-        created: Date.now()
-      };
-      try {
-        await dbSet(dbRef(db, 'lobbies/' + code), lobbyObj);
-        localStorage.setItem('player', playerName);
-        localStorage.setItem('lobbyCode', code);
-        document.getElementById('createResult').textContent = 'Lobby gemaakt — code: ' + code;
-        // redirect to lobby page after small delay
-        setTimeout(()=> location.href='lobby.html', 900);
-      } catch(e){ alert('Fout bij maken lobby: ' + e.message); }
-    });
-
-    document.getElementById('btnJoin').addEventListener('click', async ()=>{
-      const code = document.getElementById('joinCode').value.trim();
-      if(!code) return alert('Vul code in');
-      const snap = await dbGet(dbRef(db, 'lobbies/' + code));
-      if(!snap.exists()) return alert('Lobby niet gevonden');
-      const lobby = snap.val();
-      if(lobby.players && lobby.players.guest) return alert('Lobby al vol!');
-      const playerName = localStorage.getItem('player') || ('Gast' + Math.floor(Math.random()*9000+1000));
-      await dbSet(dbRef(db, `lobbies/${code}/players/guest`), playerName);
-      localStorage.setItem('player', playerName);
-      localStorage.setItem('lobbyCode', code);
-      // mark ready to start placement
-      await dbSet(dbRef(db, `lobbies/${code}/status`), 'ready');
-      location.href='lobby.html';
-    });
-
-    // Show any recent created lobby code (in case page reload)
-    const existing = localStorage.getItem('lobbyCode');
-    if(existing) document.getElementById('createResult').textContent = 'Recent actieve lobby: ' + existing;
+    guestBtn.onclick = () => {
+      localStorage.setItem("username", "Gast" + Math.floor(Math.random()*1000));
+      window.location.href = "home.html";
+    };
   </script>
 </body>
 </html>
