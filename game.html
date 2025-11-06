@@ -2,23 +2,28 @@
 <html lang="nl">
 <head>
   <meta charset="UTF-8">
-  <title>Zeeslag Game</title>
-  <link rel="stylesheet" href="game.css">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Zeeslag - Spel</title>
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <div id="turnPopup">⏳ Aan de beurt: <span id="turnPlayer"></span></div>
-  <div id="gameContainer">
-    <div>
-      <h2>Jouw bord</h2>
-      <div id="myBoard" class="board"></div>
-    </div>
-    <div>
-      <h2>Tegenstander</h2>
-      <div id="enemyBoard" class="board"></div>
-    </div>
-  </div>
+  <div class="game-container">
+    <h1>⚓ Zeeslag ⚓</h1>
+    <p id="turnInfo"></p>
 
-  <button id="startBtn">Start Game</button>
+    <div class="board-wrapper">
+      <div>
+        <h3>Jouw schepen</h3>
+        <div id="myBoard" class="board"></div>
+      </div>
+      <div>
+        <h3>Tegenstander</h3>
+        <div id="enemyBoard" class="board"></div>
+      </div>
+    </div>
+
+    <p id="gameMessage"></p>
+  </div>
 
   <script type="module" src="game.js"></script>
 </body>
