@@ -1,60 +1,24 @@
-<!-- game.html -->
-<!doctype html>
+<!DOCTYPE html>
 <html lang="nl">
 <head>
-  <meta charset="utf-8">
-  <title>Zeeslag — Game</title>
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <link rel="stylesheet" href="style.css">
+  <meta charset="UTF-8">
+  <title>Zeeslag Game</title>
+  <link rel="stylesheet" href="game.css">
 </head>
 <body>
-  <!-- Turn popup -->
-  <div class="turnbar"><div id="turnPopup" class="turnpopup">Wachten op speler...</div></div>
-
-  <div class="container" style="padding-top:90px">
-    <div class="header">
-      <div>
-        <div class="title" id="gameTitle">Zeeslag</div>
-        <div id="subInfo" style="color:rgba(232,246,255,0.7)"></div>
-      </div>
-      <div class="flex">
-        <div id="meName" style="font-weight:800;color:var(--accent)"></div>
-        <button id="btnExit" class="btn ghost small">Stop</button>
-      </div>
+  <div id="turnPopup">⏳ Aan de beurt: <span id="turnPlayer"></span></div>
+  <div id="gameContainer">
+    <div>
+      <h2>Jouw bord</h2>
+      <div id="myBoard" class="board"></div>
     </div>
-
-    <div class="panel">
-      <div class="flex" style="justify-content:space-between">
-        <div>
-          <div class="title">Jouw bord</div>
-          <div id="ownBoardWrap"></div>
-        </div>
-        <div>
-          <div class="title">Tegenstander</div>
-          <div id="oppBoardWrap"></div>
-        </div>
-      </div>
-
-      <div style="margin-top:12px" class="flex">
-        <div id="controls" class="panel">
-          <div style="font-weight:800">Info</div>
-          <div id="log" style="max-width:440px;min-width:240px"></div>
-        </div>
-        <div class="panel" style="min-width:220px">
-          <div style="font-weight:800">Acties</div>
-          <div class="flex" style="margin-top:8px">
-            <button id="btnRestart" class="btn small">Nieuwe lobby</button>
-            <button id="btnSurrender" class="btn ghost small">Geef op</button>
-          </div>
-          <div style="margin-top:10px;color:rgba(232,246,255,0.75)">
-            <div id="modeInfo"></div>
-            <div id="remaining" style="margin-top:6px"></div>
-          </div>
-        </div>
-      </div>
-
+    <div>
+      <h2>Tegenstander</h2>
+      <div id="enemyBoard" class="board"></div>
     </div>
   </div>
+
+  <button id="startBtn">Start Game</button>
 
   <script type="module" src="game.js"></script>
 </body>
