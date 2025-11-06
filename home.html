@@ -8,120 +8,105 @@
 </head>
 <body>
 <div class="container">
-  <h1>⚓ Zeeslag ⚓</h1>
-  <p>Welkom, <span id="userDisplay"></span></p>
-
+  <h1>⚓ Zeeslag - Home ⚓</h1>
   <button id="createLobbyBtn">Maak Lobby</button>
   <button id="joinLobbyBtn">Join Lobby</button>
-  <button id="guestBtn">Speel als gast</button>
   <button id="leaderboardBtn">Leaderboard</button>
-  <button id="logoutBtn" class="secondary">Logout</button>
+  <button id="logoutBtn">Logout</button>
 
-  <!-- Gamemode selectie -->
-  <div id="gamemodeSelection" style="display:none;">
-    <h3>Kies Gamemode</h3>
+  <div id="createLobbySection" style="display:none;">
+    <h3>Kies gamemode en bord grootte</h3>
     <button class="modeBtn" data-mode="classic">Classic</button>
     <button class="modeBtn" data-mode="streak">Streak</button>
     <button class="modeBtn" data-mode="power">Power</button>
-    <button id="backBtn" class="secondary">Terug</button>
+    <div id="sizeSelection"></div>
   </div>
 
-  <!-- Bord size selectie -->
-  <div id="sizeSelection" style="display:none;">
-    <h3>Kies Bordgrootte en aantal schepen</h3>
-    <button class="sizeBtn" data-size="10" data-ships="3">10x10 - 3 schepen</button>
-    <button class="sizeBtn" data-size="15" data-ships="4">15x15 - 4 schepen</button>
-    <button class="sizeBtn" data-size="20" data-ships="6">20x20 - 6 schepen</button>
+  <div id="joinLobbySection" style="display:none;">
+    <h3>Voer Lobby Code in</h3>
+    <input type="text" id="lobbyCodeInput" placeholder="Lobby Code">
+    <button id="joinLobbyConfirmBtn">Join</button>
   </div>
 </div>
 
 <script type="module">
-import { db, ref, set, update } from "./firebase.js";
+import { db, ref, set, get } from "./firebase.js";
 
-// Check username
-let username = localStorage.getItem("username");
-if(username) document.getElementById("userDisplay").innerText=username;
+const username = localStorage.getItem("username");
+const isGuest = localStorage.getItem("isGuest") === "true";
+if(!username) window.location.href="index.html";
 
-// Buttons
-const createLobbyBtn=document.getElementById("createLobbyBtn");
-const joinLobbyBtn=document.getElementById("joinLobbyBtn");
-const guestBtn=document.getElementById("guestBtn");
-const leaderboardBtn=document.getElementById("leaderboardBtn");
-const logoutBtn=document.getElementById("logoutBtn");
-const gamemodeSelection=document.getElementById("gamemodeSelection");
-const modeBtns=document.querySelectorAll(".modeBtn");
-const sizeSelection=document.getElementById("sizeSelection");
-const sizeBtns=document.querySelectorAll(".sizeBtn");
-const backBtn=document.getElementById("backBtn");
+const createLobbyBtn = document.getElementById("createLobbyBtn");
+const joinLobbyBtn = document.getElementById("joinLobbyBtn");
+const leaderboardBtn = document.getElementById("leaderboardBtn");
+const logoutBtn = document.getElementById("logoutBtn");
 
-// Maak Lobby
-createLobbyBtn.addEventListener("click", ()=> {
-  gamemodeSelection.style.display="block";
-  createLobbyBtn.style.display="none";
-  joinLobbyBtn.style.display="none";
-  guestBtn.style.display="none";
-  leaderboardBtn.style.display="none";
+const createLobbySection = document.getElementById("createLobbySection");
+const joinLobbySection = document.getElementById("joinLobbySection");
+
+const sizeSelection = document.getElementById("sizeSelection");
+const lobbyCodeInput = document.getElementById("lobbyCodeInput");
+const joinLobbyConfirmBtn = document.getElementById("joinLobbyConfirmBtn");
+
+// --- Knoppen ---
+createLobbyBtn.addEventListener("click", ()=>{
+  createLobbySection.style.display="block";
+  joinLobbySection.style.display="none";
 });
 
-// Terug knop
-backBtn.addEventListener("click", ()=>{
-  gamemodeSelection.style.display="none";
-  createLobbyBtn.style.display="block";
-  joinLobbyBtn.style.display="block";
-  guestBtn.style.display="block";
-  leaderboardBtn.style.display="block";
+joinLobbyBtn.addEventListener("click", ()=>{
+  createLobbySection.style.display="none";
+  joinLobbySection.style.display="block";
 });
 
-// Gamemode keuze
-let selectedMode = "";
-modeBtns.forEach(btn=>{
-  btn.addEventListener("click", ()=>{
-    selectedMode = btn.dataset.mode;
-    gamemodeSelection.style.display="none";
-    sizeSelection.style.display="block";
-  });
-});
-
-// Bord size keuze → maak lobby
-sizeBtns.forEach(async btn=>{
-  btn.addEventListener("click", async ()=>{
-    const size=parseInt(btn.dataset.size);
-    const ships=parseInt(btn.dataset.ships);
-    const lobbyCode=Math.floor(1000+Math.random()*9000).toString();
-
-    await set(ref(db,"lobbies/"+lobbyCode),{
-      host:username,
-      guest:"",
-      mode:selectedMode,
-      size:size,
-      ships:ships,
-      gameStarted:false
-    });
-
-    localStorage.setItem("lobbyCode", lobbyCode);
-    localStorage.setItem("isGuest","false"); // echte speler
-    window.location.href="lobby.html";
-  });
-});
-
-// Join lobby
-joinLobbyBtn.addEventListener("click", ()=>window.location.href="join.html");
-
-// Speel als gast
-guestBtn.addEventListener("click", ()=>{
-  const guestName = prompt("Vul een tijdelijke naam in:");
-  if(!guestName) return;
-  localStorage.setItem("username", guestName);
-  localStorage.setItem("isGuest","true");
-  document.getElementById("userDisplay").innerText=guestName;
-});
-
-// Logout
 logoutBtn.addEventListener("click", ()=>{
-  localStorage.removeItem("username");
-  localStorage.removeItem("lobbyCode");
-  localStorage.removeItem("isGuest");
+  localStorage.clear();
   window.location.href="index.html";
+});
+
+// --- Gamemode knoppen ---
+document.querySelectorAll(".modeBtn").forEach(btn=>{
+  btn.addEventListener("click", ()=>{
+    const mode = btn.dataset.mode;
+    sizeSelection.innerHTML="";
+    let sizes=[];
+    if(mode==="classic") sizes=[{size:10,ships:3}];
+    if(mode==="streak") sizes=[{size:15,ships:4}];
+    if(mode==="power") sizes=[{size:20,ships:6}];
+
+    sizes.forEach(s=>{
+      const b=document.createElement("button");
+      b.textContent=`${s.size}x${s.size} (${s.ships} schepen)`;
+      b.classList.add("sizeBtn");
+      b.addEventListener("click", async ()=>{
+        const code=Math.random().toString(36).substring(2,7).toUpperCase();
+        await set(ref(db,"lobbies/"+code),{
+          host: username,
+          guest:"",
+          mode:mode,
+          size:s.size,
+          ships:s.ships
+        });
+        localStorage.setItem("lobbyCode",code);
+        window.location.href="game.html";
+      });
+      sizeSelection.appendChild(b);
+    });
+  });
+});
+
+// --- Join Lobby ---
+joinLobbyConfirmBtn.addEventListener("click", async ()=>{
+  const code = lobbyCodeInput.value.trim().toUpperCase();
+  const lobbyRef = ref(db,"lobbies/"+code);
+  const snap = await get(lobbyRef);
+  if(!snap.exists()){ alert("Lobby niet gevonden!"); return; }
+  const data = snap.val();
+  if(data.guest){ alert("Lobby vol!"); return; }
+
+  await set(ref(db,"lobbies/"+code+"/guest"), username);
+  localStorage.setItem("lobbyCode",code);
+  window.location.href="game.html";
 });
 </script>
 </body>
