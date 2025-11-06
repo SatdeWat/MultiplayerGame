@@ -13,6 +13,7 @@
 
   <button id="createLobbyBtn">Maak Lobby</button>
   <button id="joinLobbyBtn">Join Lobby</button>
+  <button id="guestBtn">Speel als gast</button>
   <button id="leaderboardBtn">Leaderboard</button>
   <button id="logoutBtn" class="secondary">Logout</button>
 
@@ -35,14 +36,16 @@
 </div>
 
 <script type="module">
-import { db, ref, set, update, get } from "./firebase.js";
+import { db, ref, set, update } from "./firebase.js";
 
-const username = localStorage.getItem("username");
-if(!username) window.location.href="index.html";
-document.getElementById("userDisplay").innerText=username;
+// Check username
+let username = localStorage.getItem("username");
+if(username) document.getElementById("userDisplay").innerText=username;
 
+// Buttons
 const createLobbyBtn=document.getElementById("createLobbyBtn");
 const joinLobbyBtn=document.getElementById("joinLobbyBtn");
+const guestBtn=document.getElementById("guestBtn");
 const leaderboardBtn=document.getElementById("leaderboardBtn");
 const logoutBtn=document.getElementById("logoutBtn");
 const gamemodeSelection=document.getElementById("gamemodeSelection");
@@ -51,11 +54,12 @@ const sizeSelection=document.getElementById("sizeSelection");
 const sizeBtns=document.querySelectorAll(".sizeBtn");
 const backBtn=document.getElementById("backBtn");
 
-// Klik Maak Lobby -> toon gamemodes
+// Maak Lobby
 createLobbyBtn.addEventListener("click", ()=> {
   gamemodeSelection.style.display="block";
   createLobbyBtn.style.display="none";
   joinLobbyBtn.style.display="none";
+  guestBtn.style.display="none";
   leaderboardBtn.style.display="none";
 });
 
@@ -64,10 +68,11 @@ backBtn.addEventListener("click", ()=>{
   gamemodeSelection.style.display="none";
   createLobbyBtn.style.display="block";
   joinLobbyBtn.style.display="block";
+  guestBtn.style.display="block";
   leaderboardBtn.style.display="block";
 });
 
-// Gamemode gekozen -> toon bord size
+// Gamemode keuze
 let selectedMode = "";
 modeBtns.forEach(btn=>{
   btn.addEventListener("click", ()=>{
@@ -77,7 +82,7 @@ modeBtns.forEach(btn=>{
   });
 });
 
-// Bord size gekozen -> maak lobby in DB
+// Bord size keuze → maak lobby
 sizeBtns.forEach(async btn=>{
   btn.addEventListener("click", async ()=>{
     const size=parseInt(btn.dataset.size);
@@ -94,19 +99,28 @@ sizeBtns.forEach(async btn=>{
     });
 
     localStorage.setItem("lobbyCode", lobbyCode);
+    localStorage.setItem("isGuest","false"); // echte speler
     window.location.href="lobby.html";
   });
 });
 
 // Join lobby
-joinLobbyBtn.addEventListener("click", ()=>{
-  window.location.href="join.html";
+joinLobbyBtn.addEventListener("click", ()=>window.location.href="join.html");
+
+// Speel als gast
+guestBtn.addEventListener("click", ()=>{
+  const guestName = prompt("Vul een tijdelijke naam in:");
+  if(!guestName) return;
+  localStorage.setItem("username", guestName);
+  localStorage.setItem("isGuest","true");
+  document.getElementById("userDisplay").innerText=guestName;
 });
 
 // Logout
 logoutBtn.addEventListener("click", ()=>{
   localStorage.removeItem("username");
   localStorage.removeItem("lobbyCode");
+  localStorage.removeItem("isGuest");
   window.location.href="index.html";
 });
 </script>
