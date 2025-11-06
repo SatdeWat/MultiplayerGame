@@ -149,4 +149,27 @@ button:hover{ transform: translateY(-3px); box-shadow: 0 8px 20px rgba(0,0,0,0.4
 @media (max-width:900px){
   .cell{ width:30px; height:30px; font-size:14px; }
   .boards{ gap:18px; }
+
+  /* Plaats in style.css of in <style> op game.html */
+.boards {
+  display: flex;
+  gap: 20px;
+  align-items: flex-start;
+  flex-wrap: wrap; /* zorgt dat het niet breekt op smalle schermen */
+}
+.board-card {
+  flex: 0 0 auto;
+}
+
+/* Zorg dat cell visuals duidelijk zijn */
+.board-grid { gap: 4px; }
+.cell {
+  transition: background .12s, transform .08s;
+  user-select: none;
+}
+.cell.preview-valid { background: rgba(0,200,120,0.35) !important; }
+.cell.preview-bad { background: rgba(255,80,80,0.45) !important; }
+.ready-indicator { margin-left: 8px; font-weight: 700; }
+.turn-popup { z-index: 999; position: relative; display: none; padding: 10px 12px; border-radius: 8px; }
+
 }
