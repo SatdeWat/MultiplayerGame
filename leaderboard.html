@@ -1,0 +1,42 @@
+<!-- leaderboard.html -->
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <title>Leaderboard</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="title">Leaderboard</div>
+      <div><button onclick="location.href='index.html'" class="btn ghost small">Home</button></div>
+    </div>
+    <div class="panel">
+      <table class="table" id="lbTable">
+        <thead><tr><th>Speler</th><th>Wins</th><th>Losses</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+  <script type="module">
+    import { db, dbRef, dbGet } from './firebase.js';
+    async function load(){
+      const snap = await dbGet(dbRef(db, 'leaderboard'));
+      const t = document.querySelector('#lbTable tbody');
+      t.innerHTML = '';
+      const val = snap.val() || {};
+      const arr = Object.entries(val).map(([name,info])=>({name,wins:info.wins||0,losses:info.losses||0}));
+      arr.sort((a,b)=> b.wins - a.wins);
+      arr.forEach(row=>{
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${row.name}</td><td>${row.wins}</td><td>${row.losses}</td>`;
+        t.appendChild(tr);
+      });
+    }
+    load();
+  </script>
+</body>
+</html>
