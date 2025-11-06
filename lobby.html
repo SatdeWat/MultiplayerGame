@@ -26,30 +26,32 @@ const status = document.getElementById("status");
 
 lobbyCodeDisplay.textContent = "Lobby code: " + lobbyCode;
 
-// Poll Firebase om te zien of er een guest is toegevoegd
 onValue(lobbyRef, async snapshot=>{
   const data = snapshot.val();
   if(!data) { alert("Lobby niet gevonden!"); window.location.href="home.html"; return; }
 
+  const isGuest = localStorage.getItem("isGuest") === "true";
+
+  // Host view
   if(data.host === username && data.guest==="") {
     status.textContent="Wachten op tegenstander...";
   } else if(data.host === username && data.guest!=="") {
-    // Start game
     status.textContent=`Tegenstander ${data.guest} verbonden! Start spel...`;
-    // Maak entry in games DB voor beide spelers
-    await update(ref(db,"games/"+lobbyCode),{
-      [username]: {ships:[], shots:[]},
-      [data.guest]: {ships:[], shots:[]}
-    });
+
+    // Alleen echte spelers worden in games DB opgeslagen
+    if(!isGuest){
+      await update(ref(db,"games/"+lobbyCode),{
+        [username]: {ships:[], shots:[]},
+        [data.guest]: {ships:[], shots:[]}
+      });
+    }
+
     await update(lobbyRef,{gameStarted:true});
     setTimeout(()=> window.location.href="game.html",1000);
   }
-});
 
-// Als je join bent (guest)
-onValue(lobbyRef, snapshot=>{
-  const data = snapshot.val();
-  if(data.guest===username && data.host!=="") {
+  // Guest view
+  if(data.guest === username){
     status.textContent="Verbonden met host! Start spel...";
     setTimeout(()=> window.location.href="game.html",1000);
   }
