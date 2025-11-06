@@ -1,5 +1,16 @@
-import { initializeApp } from "firebase/app";
-import { getDatabase, ref, set, get, update, onValue } from "firebase/database";
+// firebase.js
+// Exporteert db en helpers via modular CDN imports
+
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-app.js";
+import {
+  getDatabase,
+  ref as dbRef,
+  set as dbSet,
+  get as dbGet,
+  update as dbUpdate,
+  onValue as dbOnValue,
+  remove as dbRemove,
+} from "https://www.gstatic.com/firebasejs/10.12.3/firebase-database.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyCdI588pB7GMPJcjDJTHLAWjOmADixFnvw",
@@ -14,4 +25,4 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 
-export { db, ref, set, get, update, onValue };
+export { db, dbRef, dbSet, dbGet, dbUpdate, dbOnValue, dbRemove };
