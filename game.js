@@ -192,6 +192,22 @@ async function endGame(winner, loser) {
 
   await update(winnerRef,{wins:(winnerData.wins||0)+1,games:(winnerData.games||0)+1});
   await update(loserRef,{games:(loserData.games||0)+1});
+  async function endGame(winner, loser) {
+  const isGuest = localStorage.getItem("isGuest") === "true";
+  if (isGuest) return; // Gast resultaten NIET opslaan
+
+  const winnerRef = ref(db,"users/"+winner);
+  const loserRef = ref(db,"users/"+loser);
+
+  const winnerSnap = await get(winnerRef);
+  const loserSnap = await get(loserRef);
+
+  const winnerData = winnerSnap.val();
+  const loserData = loserSnap.val();
+
+  await update(winnerRef,{wins:(winnerData.wins||0)+1,games:(winnerData.games||0)+1});
+  await update(loserRef,{games:(loserData.games||0)+1});
 
   phase = "ended";
 }
+  
