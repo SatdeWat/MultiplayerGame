@@ -1,57 +1,96 @@
-<!-- login.html -->
-<!doctype html>
+<!DOCTYPE html>
 <html lang="nl">
 <head>
-  <meta charset="utf-8">
-  <title>Login / Register</title>
-  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Zeeslag - Inloggen</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <div class="container">
-    <div class="panel">
-      <div style="font-size:18px;font-weight:800">Login / Registreren</div>
-      <div class="flex" style="margin-top:10px">
-        <input id="username" placeholder="Gebruikersnaam (geen spaties)" class="select">
-        <input id="code" placeholder="Pincode" type="password" class="select">
-      </div>
-      <div class="flex" style="margin-top:10px">
-        <button id="btnRegister" class="btn small">Registreren</button>
-        <button id="btnLogin" class="btn small">Inloggen</button>
-        <button id="btnBack" class="btn ghost small">Terug</button>
-      </div>
-      <div id="msg" style="margin-top:10px;color:var(--accent2)"></div>
+  <div class="login-container">
+    <h1 class="title">⚓ Zeeslag ⚓</h1>
+    <input type="text" id="username" placeholder="Gebruikersnaam">
+    <input type="password" id="pincode" placeholder="Pincode (min. 4 cijfers)">
+    
+    <div class="button-group">
+      <button id="loginBtn">Inloggen</button>
+      <button id="registerBtn" class="secondary">Registreren</button>
     </div>
+
+    <p id="message"></p>
   </div>
 
   <script type="module">
-    import { db, dbRef, dbGet, dbSet } from './firebase.js';
-    const u = document.getElementById('username'), p = document.getElementById('code'), msg = document.getElementById('msg');
-    document.getElementById('btnBack').addEventListener('click', ()=> location.href='index.html');
+    // Firebase setup
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-app.js";
+    import { getDatabase, ref, get, set } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-database.js";
 
-    document.getElementById('btnRegister').addEventListener('click', async ()=>{
-      const name = u.value.trim();
-      const pin = p.value.trim();
-      if(!name || name.includes(' ')) return msg.textContent='Kies geldige gebruikersnaam zonder spaties';
-      if(!pin || pin.length<4) return msg.textContent='Pincode minstens 4 tekens';
-      const snap = await dbGet(dbRef(db, 'users/' + name));
-      if(snap.exists()) return msg.textContent='Gebruikersnaam bestaat al';
-      await dbSet(dbRef(db, 'users/' + name), { username: name, code: pin });
-      localStorage.setItem('player', name);
-      msg.textContent = 'Geregistreerd! Je wordt doorgestuurd...';
-      setTimeout(()=> location.href='index.html', 800);
+    const firebaseConfig = {
+      apiKey: "YOUR_API_KEY",
+      authDomain: "YOUR_AUTH_DOMAIN",
+      databaseURL: "YOUR_DATABASE_URL",
+      projectId: "YOUR_PROJECT_ID",
+      storageBucket: "YOUR_STORAGE_BUCKET",
+      messagingSenderId: "YOUR_SENDER_ID",
+      appId: "YOUR_APP_ID"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+
+    const usernameInput = document.getElementById("username");
+    const pincodeInput = document.getElementById("pincode");
+    const message = document.getElementById("message");
+    const loginBtn = document.getElementById("loginBtn");
+    const registerBtn = document.getElementById("registerBtn");
+
+    // Registreren
+    registerBtn.addEventListener("click", async () => {
+      const username = usernameInput.value.trim();
+      const pincode = pincodeInput.value.trim();
+
+      if (!username || !pincode || pincode.length < 4) {
+        message.textContent = "Vul een geldige gebruikersnaam en pincode in!";
+        return;
+      }
+
+      const userRef = ref(db, "users/" + username);
+      const snapshot = await get(userRef);
+      if (snapshot.exists()) {
+        message.textContent = "Gebruiker bestaat al!";
+        return;
+      }
+
+      await set(userRef, { pincode });
+      message.textContent = "✅ Registratie gelukt! Je kunt nu inloggen.";
+      message.style.color = "lightgreen";
     });
 
-    document.getElementById('btnLogin').addEventListener('click', async ()=>{
-      const name = u.value.trim();
-      const pin = p.value.trim();
-      if(!name) return msg.textContent='Vul gebruikersnaam';
-      const snap = await dbGet(dbRef(db, 'users/' + name));
-      if(!snap.exists()) return msg.textContent='Gebruiker niet gevonden';
-      if(snap.val().code !== pin) return msg.textContent='Foute pincode';
-      localStorage.setItem('player', name);
-      msg.textContent = 'Ingelogd! Doorsturen...';
-      setTimeout(()=> location.href='index.html', 600);
+    // Inloggen
+    loginBtn.addEventListener("click", async () => {
+      const username = usernameInput.value.trim();
+      const pincode = pincodeInput.value.trim();
+
+      if (!username || !pincode) {
+        message.textContent = "Vul je gegevens in!";
+        return;
+      }
+
+      const userRef = ref(db, "users/" + username);
+      const snapshot = await get(userRef);
+
+      if (!snapshot.exists()) {
+        message.textContent = "Gebruiker niet gevonden!";
+        return;
+      }
+
+      const data = snapshot.val();
+      if (data.pincode === pincode) {
+        localStorage.setItem("username", username);
+        window.location.href = "lobby.html";
+      } else {
+        message.textContent = "❌ Onjuiste pincode!";
+      }
     });
   </script>
 </body>
