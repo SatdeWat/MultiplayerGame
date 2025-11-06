@@ -1,103 +1,59 @@
 <!DOCTYPE html>
 <html lang="nl">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Zeeslag - Lobby</title>
-  <link rel="stylesheet" href="style.css">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Zeeslag - Lobby</title>
+<link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <div class="lobby-container">
-    <h1>⚓ Zeeslag Lobby ⚓</h1>
-    <p>Welkom, <span id="userDisplay"></span>!</p>
+<div class="container">
+  <h1>⚓ Lobby ⚓</h1>
+  <p id="lobbyCodeDisplay"></p>
+  <p id="status">Wachten op tegenstander...</p>
+</div>
 
-    <div id="hostSection">
-      <button id="createLobby">Nieuwe lobby maken</button>
-    </div>
+<script type="module">
+import { db, ref, onValue, update } from "./firebase.js";
 
-    <div id="joinSection">
-      <input type="text" id="joinCode" placeholder="Lobbycode">
-      <button id="joinLobby">Lobby joinen</button>
-    </div>
+const username = localStorage.getItem("username");
+const lobbyCode = localStorage.getItem("lobbyCode");
+if(!username || !lobbyCode) window.location.href="index.html";
 
-    <div id="lobbyInfo" style="display:none;">
-      <p>Lobbycode: <span id="lobbyCode"></span></p>
-      <p id="status">Wachten op tweede speler...</p>
-    </div>
-  </div>
+const lobbyRef = ref(db,"lobbies/"+lobbyCode);
+const lobbyCodeDisplay = document.getElementById("lobbyCodeDisplay");
+const status = document.getElementById("status");
 
-  <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-app.js";
-    import { getDatabase, ref, set, onValue, get, update } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-database.js";
+lobbyCodeDisplay.textContent = "Lobby code: " + lobbyCode;
 
-    const firebaseConfig = {
-      apiKey: "YOUR_API_KEY",
-      authDomain: "YOUR_AUTH_DOMAIN",
-      databaseURL: "YOUR_DATABASE_URL",
-      projectId: "YOUR_PROJECT_ID",
-      storageBucket: "YOUR_STORAGE_BUCKET",
-      messagingSenderId: "YOUR_SENDER_ID",
-      appId: "YOUR_APP_ID"
-    };
+// Poll Firebase om te zien of er een guest is toegevoegd
+onValue(lobbyRef, async snapshot=>{
+  const data = snapshot.val();
+  if(!data) { alert("Lobby niet gevonden!"); window.location.href="home.html"; return; }
 
-    const app = initializeApp(firebaseConfig);
-    const db = getDatabase(app);
-
-    const username = localStorage.getItem("username");
-    if (!username) window.location.href = "login.html";
-
-    const userDisplay = document.getElementById("userDisplay");
-    userDisplay.textContent = username;
-
-    const createBtn = document.getElementById("createLobby");
-    const joinBtn = document.getElementById("joinLobby");
-    const joinCodeInput = document.getElementById("joinCode");
-    const lobbyInfo = document.getElementById("lobbyInfo");
-    const lobbyCodeDisplay = document.getElementById("lobbyCode");
-    const status = document.getElementById("status");
-
-    let lobbyCode = "";
-
-    // Maak lobby
-    createBtn.addEventListener("click", async () => {
-      lobbyCode = Math.floor(1000 + Math.random() * 9000).toString();
-
-      await set(ref(db, "lobbies/" + lobbyCode), {
-        host: username,
-        guest: "",
-        gameStarted: false
-      });
-
-      lobbyInfo.style.display = "block";
-      lobbyCodeDisplay.textContent = lobbyCode;
-
-      onValue(ref(db, "lobbies/" + lobbyCode + "/guest"), snapshot => {
-        const guest = snapshot.val();
-        if (guest && guest !== "") {
-          update(ref(db, "lobbies/" + lobbyCode), { gameStarted: true });
-          localStorage.setItem("lobbyCode", lobbyCode);
-          window.location.href = "game.html";
-        }
-      });
+  if(data.host === username && data.guest==="") {
+    status.textContent="Wachten op tegenstander...";
+  } else if(data.host === username && data.guest!=="") {
+    // Start game
+    status.textContent=`Tegenstander ${data.guest} verbonden! Start spel...`;
+    // Maak entry in games DB voor beide spelers
+    await update(ref(db,"games/"+lobbyCode),{
+      [username]: {ships:[], shots:[]},
+      [data.guest]: {ships:[], shots:[]}
     });
+    await update(lobbyRef,{gameStarted:true});
+    setTimeout(()=> window.location.href="game.html",1000);
+  }
+});
 
-    // Join lobby
-    joinBtn.addEventListener("click", async () => {
-      const code = joinCodeInput.value.trim();
-      if (!code) return alert("Vul een lobbycode in!");
-
-      const lobbyRef = ref(db, "lobbies/" + code);
-      const snapshot = await get(lobbyRef);
-
-      if (!snapshot.exists()) return alert("Lobby niet gevonden!");
-
-      const data = snapshot.val();
-      if (data.guest && data.guest !== "") return alert("Lobby is al vol!");
-
-      await update(lobbyRef, { guest: username });
-      localStorage.setItem("lobbyCode", code);
-      window.location.href = "game.html";
-    });
-  </script>
+// Als je join bent (guest)
+onValue(lobbyRef, snapshot=>{
+  const data = snapshot.val();
+  if(data.guest===username && data.host!=="") {
+    status.textContent="Verbonden met host! Start spel...";
+    setTimeout(()=> window.location.href="game.html",1000);
+  }
+});
+</script>
 </body>
 </html>
