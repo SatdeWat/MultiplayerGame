@@ -1,262 +1,466 @@
 // game.js
-import { db, dbRef as ref, dbSet as set, dbGet as get, dbUpdate as update, dbOnValue as onValue } from "./firebase.js";
+// Verwacht: firebase.js exporteert: db, dbRef as ref, dbSet as set, dbGet as get, dbUpdate as update, dbOnValue as onValue
+import {
+  db,
+  dbRef as ref,
+  dbSet as set,
+  dbGet as get,
+  dbUpdate as update,
+  dbOnValue as onValue
+} from "./firebase.js";
 
 const username = localStorage.getItem("username");
-const isGuest = localStorage.getItem("isGuest")==="true";
+const isGuest = localStorage.getItem("isGuest") === "true";
 const lobbyCode = localStorage.getItem("lobbyCode");
-if(!username || !lobbyCode) window.location.href="home.html";
+if (!username || !lobbyCode) {
+  window.location.href = "home.html";
+}
 
 const myBoardDiv = document.getElementById("myBoard");
 const enemyBoardDiv = document.getElementById("enemyBoard");
 const rotateBtn = document.getElementById("rotateBtn");
-const toHome = document.getElementById("toHome");
+const doneBtn = document.getElementById("doneBtn");
+const backHome = document.getElementById("backHome");
 const turnPopup = document.getElementById("turnPopup");
 const turnPlayer = document.getElementById("turnPlayer");
 const gameNote = document.getElementById("gameNote");
+const mySizeLabel = document.getElementById("mySizeLabel");
+const enemySizeLabel = document.getElementById("enemySizeLabel");
+const usePowerBtn = document.getElementById("usePowerBtn");
+const powerCountSpan = document.getElementById("powerCount");
+const placeHint = document.getElementById("placeHint");
+
+const lobbyRef = ref(db, `lobbies/${lobbyCode}`);
+const gameRef = ref(db, `games/${lobbyCode}`);
 
 let lobbyData = null;
 let opponent = null;
 let size = 10;
-let shipLengths = [5,4,3];
-let placedShips = []; // array of arrays of coordinates e.g. ["0,0","1,0","2,0"]
-let hoverCells = [];
+let shipLengths = []; // will be filled by size
+let placedShips = []; // array of arrays
 let orientation = "horizontal";
-let phase = "placing"; // placing, waiting, playing, ended
-let myShots = {}; // record of shots we've fired
-let isMyTurn = false;
+let phase = "placing"; // placing -> waiting -> playing -> ended
+let myPowerShots = 0; // for Power gamemode
+let mode = "classic"; // classic / streak / power
 
-const lobbyRef = ref(db, "lobbies/" + lobbyCode);
-const gameRef = ref(db, "games/" + lobbyCode);
+// utility for mapping sizes -> ships
+function shipsForSize(boardSize) {
+  if (boardSize === 10) return [5, 4, 3]; // 3 ships
+  if (boardSize === 15) return [5, 4, 3, 3]; // 4 ships
+  if (boardSize === 20) return [5, 4, 4, 3, 3, 2]; // 6 ships
+  return [5,4,3];
+}
 
-// initialize: read lobby config and build grids
-(async function init(){
-  const snap = await get(lobbyRef);
-  if(!snap.exists()) { alert("Lobby niet gevonden"); window.location.href="home.html"; return; }
-  lobbyData = snap.val();
-  size = lobbyData.size;
+// --- init ---
+(async function init() {
+  const s = await get(lobbyRef);
+  if (!s.exists()) { alert("Lobby niet gevonden."); location.href = "home.html"; return; }
+  lobbyData = s.val();
+  mode = lobbyData.mode || "classic";
+  size = lobbyData.size || 10;
+  shipLengths = shipsForSize(size);
   opponent = (lobbyData.host === username) ? lobbyData.guest : lobbyData.host;
-  createBoard(myBoardDiv, size, true, placePreviewHandler);
-  createBoard(enemyBoardDiv, size, false, shootHandler);
-  gameNote.textContent = `Plaats schepen: ${shipLengths.join(", ")} (in volgorde).`;
-  // listen for game node creation & updates
-  onValue(gameRef, (s) => {
-    const data = s.val() || {};
-    // If both players exist in games node and have ships, determine if both placed:
-    const players = Object.keys(data).filter(k => k !== "turn");
-    if(players.length === 2 && data[username] && data[opponent]) {
-      // render boards as shots / hits occur
-      renderBoards(data);
-      // determine turn
-      if(data.turn) {
-        updateTurnDisplay(data.turn);
-      }
+
+  mySizeLabel.textContent = `${size}x${size}`;
+  enemySizeLabel.textContent = `${size}x${size}`;
+
+  createBoard(myBoardDiv, size, true, onMyCellEvent);
+  createBoard(enemyBoardDiv, size, false, onEnemyCellClick);
+
+  rotateBtn.textContent = `Rotate (${orientation})`;
+  placeHint.textContent = `Plaats schip van lengte ${shipLengths[0]}`;
+
+  // If there is already a games node for this lobby, keep listening
+  onValue(lobbyRef, (snap) => {
+    const data = snap.val() || {};
+    opponent = (data.host === username) ? data.guest : data.host;
+    // If both players present, ensure games node exists (lobby.html already did this typically)
+    if (data.host && data.guest) {
+      // create games node if not exist
+      get(gameRef).then(gsnap => {
+        if (!gsnap.exists()) {
+          // create placeholders
+          update(ref(db, `games/${lobbyCode}`), {
+            [data.host]: { ships: [], shots: {} },
+            [data.guest]: { ships: [], shots: {} },
+            turn: null
+          });
+        }
+      });
     }
+  });
+
+  // listen games node for changes (shots, turn, ships)
+  onValue(gameRef, (snap) => {
+    const data = snap.val() || {};
+    if (!data) return;
+    // update power count UI if exists
+    const selfData = data[username] || {};
+    if (selfData.powerShots) {
+      myPowerShots = selfData.powerShots;
+      powerCountSpan.textContent = myPowerShots;
+      usePowerBtn.style.display = myPowerShots > 0 ? "inline-block" : "none";
+    }
+    // update rendering of shots/hits
+    renderBoards(data);
+    // update turn popup
+    if (data.turn) {
+      showTurnPopup(data.turn);
+    }
+    // if both players wrote their ships arrays and both players have "ready" (we'll use lobby ready flags), and both placed, set phase to playing if both clicked done
+    // we rely on `done` clicks to set games/{lobby}/{player}/ready=true in DB when user clicks Done
+    const p1 = data[Object.keys(data)[0]];
+    const p2 = data[Object.keys(data)[1]];
+  });
+
+  // rotate handler
+  rotateBtn.addEventListener("click", () => {
+    orientation = orientation === "horizontal" ? "vertical" : "horizontal";
+    rotateBtn.textContent = `Rotate (${orientation})`;
+  });
+
+  doneBtn.addEventListener("click", async () => {
+    if (shipLengths.length > 0) { alert(`Plaats eerst alle schepen! Nog: ${shipLengths.join(", ")}`); return; }
+    // write our placedShips to DB under games/{lobby}/{username}.ships (as grouped array) and set ready:true
+    await set(ref(db, `games/${lobbyCode}/${username}`), { ships: placedShips.slice(), shots: {}, ready: true, powerShots: 0 });
+    phase = "waiting";
+    doneBtn.style.display = "none";
+    gameNote.textContent = "Wachten op tegenstander...";
+    // if opponent already has ships && ready -> start playing: set turn random if not set and both ready true
+    const gameSnap = await get(gameRef);
+    const g = gameSnap.val() || {};
+    const oppKey = Object.keys(g).find(k => k !== username && k !== "turn");
+    if (oppKey && g[oppKey] && g[oppKey].ready) {
+      // both placed and ready -> determine turn if not set
+      if (!g.turn) {
+        const first = Math.random() < 0.5 ? username : opponent;
+        await update(gameRef, { turn: first });
+      }
+      phase = "playing";
+      gameNote.textContent = "Spel gestart!";
+    }
+  });
+
+  // powershot button
+  usePowerBtn.addEventListener("click", () => {
+    if (myPowerShots <= 0) return;
+    // Set a "usingPower" flag in client state so next click on enemy board triggers powerShot instead of normal shot
+    usingPowerMode = true;
+    usePowerBtn.textContent = "Kies 3x3 target...";
+    usePowerBtn.disabled = true;
+  });
+
+  // go home
+  backHome.addEventListener("click", () => {
+    window.location.href = "home.html";
   });
 })();
 
-// board creation
-function createBoard(boardDiv, gridSize, clickable=false, handler=null){
-  boardDiv.innerHTML = "";
-  boardDiv.style.gridTemplateColumns = `repeat(${gridSize}, 40px)`;
-  boardDiv.style.gridTemplateRows = `repeat(${gridSize}, 40px)`;
-  boardDiv.classList.add("board-grid");
-  for(let y=0;y<gridSize;y++){
-    for(let x=0;x<gridSize;x++){
+// --------- helpers & handlers ----------
+
+function createBoard(container, gridSize, clickable = false, handler = null) {
+  container.innerHTML = "";
+  container.style.gridTemplateColumns = `repeat(${gridSize}, 40px)`;
+  container.style.gridTemplateRows = `repeat(${gridSize}, 40px)`;
+  container.classList.add("board-grid");
+  for (let y = 0; y < gridSize; y++) {
+    for (let x = 0; x < gridSize; x++) {
       const cell = document.createElement("div");
-      cell.classList.add("cell");
+      cell.className = "cell";
       cell.dataset.x = x;
       cell.dataset.y = y;
-      if(clickable && handler){
-        cell.addEventListener("mouseenter", ()=> handler(x,y,true));
-        cell.addEventListener("mouseleave", ()=> handler(x,y,false));
-        cell.addEventListener("click", ()=> handler(x,y,"place"));
+      if (clickable && handler) {
+        cell.addEventListener("mouseenter", () => handler(x, y, "enter", cell));
+        cell.addEventListener("mouseleave", () => handler(x, y, "leave", cell));
+        cell.addEventListener("click", () => handler(x, y, "click", cell));
       }
-      boardDiv.appendChild(cell);
+      container.appendChild(cell);
     }
   }
 }
 
-// preview & place handler for my board
-function placePreviewHandler(x,y,action){
-  if(phase !== "placing") return;
-  if(shipLengths.length === 0) return;
+let usingPowerMode = false;
+
+// Player placing handler (hover and click)
+function onMyCellEvent(x, y, type, cellEl) {
+  if (phase !== "placing" && phase !== "waiting") return;
+  if (shipLengths.length === 0) return;
   const length = shipLengths[0];
+  // compute coords for prospective ship
   const coords = [];
-  for(let i=0;i<length;i++){
+  for (let i = 0; i < length; i++) {
     const cx = x + (orientation === "horizontal" ? i : 0);
     const cy = y + (orientation === "vertical" ? i : 0);
-    if(cx >= size || cy >= size) { return; } // out of bounds => no preview
+    if (cx >= size || cy >= size) {
+      coords.length = 0;
+      break;
+    }
     coords.push(`${cx},${cy}`);
   }
-
-  if(action === true){
-    // hover on: show preview (green) unless overlaps existing placed ships
-    const overlaps = coords.some(c => placedShips.flat().includes(c));
+  if (type === "enter") {
+    // preview
+    const overlap = coords.some(c => placedShips.flat().includes(c));
     coords.forEach(c => {
-      const [cx,cy] = c.split(",");
+      const [cx, cy] = c.split(",");
       const cell = [...myBoardDiv.children].find(n => n.dataset.x == cx && n.dataset.y == cy);
-      if(cell) cell.style.background = overlaps ? "rgba(255,80,80,0.45)" : "rgba(0,200,120,0.35)";
-      hoverCells.push(cell);
+      if (cell) {
+        cell.classList.add(overlap ? "preview-bad" : "preview-valid");
+      }
     });
-  } else if(action === false){
-    // hover out: reset hover cells
-    hoverCells.forEach(c => { if(c) c.style.background = "rgba(255,255,255,0.03)"; });
-    hoverCells = [];
-  } else if(action === "place"){
-    // place on click: check overlap, save and mark
-    const overlaps = coords.some(c => placedShips.flat().includes(c));
-    if(overlaps) { alert("Schepen mogen niet overlappen."); return; }
-    placedShips.push(coords);
+  } else if (type === "leave") {
+    // clear preview
+    [...myBoardDiv.children].forEach(c => {
+      c.classList.remove("preview-valid");
+      c.classList.remove("preview-bad");
+      // reset non-placed cells color if needed
+      if (!placedShips.flat().includes(`${c.dataset.x},${c.dataset.y}`)) {
+        c.style.background = "rgba(255,255,255,0.03)";
+        c.textContent = "";
+      }
+    });
+  } else if (type === "click") {
+    if (coords.length === 0) { alert("OOB: zet binnen het bord."); return; }
+    // overlap?
+    if (coords.some(c => placedShips.flat().includes(c))) { alert("Schepen mogen niet overlappen."); return; }
+    // place ship
+    placedShips.push(coords.slice());
     coords.forEach(c => {
-      const [cx,cy] = c.split(",");
+      const [cx, cy] = c.split(",");
       const cell = [...myBoardDiv.children].find(n => n.dataset.x == cx && n.dataset.y == cy);
-      if(cell){ cell.style.background = "#4caf50"; cell.textContent = "🚢"; }
+      if (cell) {
+        cell.classList.remove("preview-valid");
+        cell.style.background = "#4caf50";
+        cell.textContent = "🚢";
+      }
     });
     shipLengths.shift();
-    if(shipLengths.length === 0){
-      // finished placing locally — write to DB (unless guest)
-      phase = "waiting";
-      gameNote.textContent = "Schepen geplaatst. Klik in de LOBBY op Klaar (of als je al klaar bent, wacht).";
-      // write ships to games node (create if necessary)
-      if(!isGuest){
-        // ensure game node exists; lobby page created initial game nodes when both players ready
-        await set(ref(db, `games/${lobbyCode}/${username}`), { ships: placedShips.flat(), shots: {} });
-      }
+    if (shipLengths.length > 0) {
+      placeHint.textContent = `Plaats schip van lengte ${shipLengths[0]}`;
     } else {
-      gameNote.textContent = `Volgende schip: ${shipLengths[0]}`;
+      placeHint.textContent = `Alle schepen geplaatst — klik Klaar wanneer je klaar bent`;
+      doneBtn.style.display = "inline-block";
     }
   }
 }
 
-// rotate button
-rotateBtn.addEventListener("click", ()=> {
-  orientation = (orientation === "horizontal") ? "vertical" : "horizontal";
-  rotateBtn.textContent = `Rotate (${orientation})`;
-});
+// Enemy board click (shoot or power)
+async function onEnemyCellClick(x, y, type, cellEl) {
+  if (type !== "click") return;
+  if (phase !== "playing") return;
+  if (!opponent) return;
+  if (!confirmShotSafety()) return; // guard if needed
 
-// shoot handler for enemy board
-async function shootHandler(x,y){
-  if(phase !== "playing") return;
-  if(!isMyTurn) return;
+  // decide whether powershot mode is active
+  if (usingPowerMode) {
+    // apply 3x3 centered on x,y
+    const toShot = [];
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        const sx = x + dx, sy = y + dy;
+        if (sx >= 0 && sx < size && sy >= 0 && sy < size) toShot.push(`${sx},${sy}`);
+      }
+    }
+    // write all these shots into games/{lobby}/{username}/shots
+    const shotsRef = ref(db, `games/${lobbyCode}/${username}/shots`);
+    const snap = await get(shotsRef);
+    const current = snap.exists() ? snap.val() : {};
+    toShot.forEach(k => current[k] = true);
+    await update(ref(db, `games/${lobbyCode}/${username}/shots`), current);
+    // consume one powerShot
+    myPowerShots = Math.max(0, myPowerShots - 1);
+    await update(ref(db, `games/${lobbyCode}/${username}`), { powerShots: myPowerShots });
+    usingPowerMode = false;
+    usePowerBtn.textContent = `Use PowerShot (${myPowerShots})`;
+    usePowerBtn.disabled = false;
+    // After power shots, determine turn-change per mode
+    await resolveTurnAfterShots(current, true);
+    return;
+  }
+
+  // Normal single shot
   const key = `${x},${y}`;
-  // prevent double shot
-  const myShotsSnap = await get(ref(db, `games/${lobbyCode}/${username}/shots`));
-  const myShotsNow = myShotsSnap.exists() ? myShotsSnap.val() : {};
-  if(myShotsNow[key]) return; // already shot
-  myShotsNow[key] = true;
-  await update(ref(db, `games/${lobbyCode}/${username}/shots`), myShotsNow);
-  // switch turn
-  const gf = await get(ref(db, `games/${lobbyCode}`));
-  const data = gf.val() || {};
-  const other = Object.keys(data).find(k => k !== "turn" && k !== username);
-  if(other) await update(ref(db, `games/${lobbyCode}`), { turn: other });
+  const shotsRef = ref(db, `games/${lobbyCode}/${username}/shots`);
+  const snap = await get(shotsRef);
+  const current = snap.exists() ? snap.val() : {};
+  if (current[key]) return; // already shot
+  current[key] = true;
+  await update(shotsRef, current);
+  // after writing shot decide whether to switch turn based on mode and hit result
+  await resolveTurnAfterShots(current, false);
 }
 
-// render boards and hits/misses
-function renderBoards(data){
+// helper: check whether shot hit any of opponent ships
+function didShotHit(shotsObj, opponentShipsGrouped) {
+  // returns object with {hit: boolean, sunkShipIndex: null|index}
+  for (let si = 0; si < opponentShipsGrouped.length; si++) {
+    const ship = opponentShipsGrouped[si];
+    // if any coord in shots matches ship coords -> that's a hit on that ship
+    const shipHitCount = ship.filter(c => shotsObj[c]).length;
+    if (shipHitCount > 0) {
+      // is fully sunk if shipHitCount === ship.length
+      const sunk = shipHitCount === ship.length;
+      return { hit: true, sunkIndex: sunk ? si : null };
+    }
+  }
+  return { hit: false, sunkIndex: null };
+}
+
+// resolve turn change logic depending on mode
+async function resolveTurnAfterShots(myShotsObj, wasPowerShot) {
+  // read latest game and opponent ships
+  const gsnap = await get(gameRef);
+  const g = gsnap.val() || {};
+  const oppData = g[opponent] || {};
+  const oppShips = oppData.ships || []; // expect grouped arrays
+  // determine if any shot hit
+  const result = didShotHit(myShotsObj, oppShips);
+  if (mode === "streak") {
+    // if hit, keep turn; else switch
+    if (result.hit) {
+      // Keep turn (no change)
+      await update(gameRef, { turn: username });
+    } else {
+      await update(gameRef, { turn: opponent });
+    }
+  } else {
+    // classic or power: normally switch turn after shot, but for Power if we sunk a ship grant powershot
+    if (result.sunkIndex !== null && mode === "power") {
+      // grant a powerShot to shooter
+      const selfRef = ref(db, `games/${lobbyCode}/${username}`);
+      const selfSnap = await get(selfRef);
+      const selfData = selfSnap.exists() ? selfSnap.val() : {};
+      const nowPower = (selfData.powerShots || 0) + 1;
+      await update(selfRef, { powerShots: nowPower });
+      // update local counter
+      myPowerShots = nowPower;
+      powerCountSpan.textContent = myPowerShots;
+      usePowerBtn.style.display = myPowerShots > 0 ? "inline-block" : "none";
+    }
+    // always switch turn after normal/power shot
+    await update(gameRef, { turn: opponent });
+  }
+
+  // Re-evaluate sunk ships and remove? We keep ships recorded; detection done via shots.
+  // After shots, re-render will occur via onValue listener.
+}
+
+// render boards: show my ships, show enemy shots & my shots
+function renderBoards(data) {
+  // render my board: my placed ships and opponent shots
+  const myNode = data[username] || {};
+  const oppNode = data[opponent] || {};
+
+  // clear boards first (but keep placed ships visuals)
+  [...myBoardDiv.children].forEach(cell => {
+    const key = `${cell.dataset.x},${cell.dataset.y}`;
+    if (!placedShips.flat().includes(key)) {
+      cell.style.background = "rgba(255,255,255,0.03)";
+      cell.textContent = "";
+    }
+  });
+  // mark placed ships (local)
+  placedShips.flat().forEach(k => {
+    const [x, y] = k.split(",");
+    const cell = [...myBoardDiv.children].find(c => c.dataset.x == x && c.dataset.y == y);
+    if (cell) {
+      cell.style.background = "#4caf50";
+      cell.textContent = "🚢";
+    }
+  });
+
   // opponent shots on my board
-  const oppShots = data[opponent] && data[opponent].shots ? Object.keys(data[opponent].shots) : [];
+  const oppShots = (oppNode && oppNode.shots) ? Object.keys(oppNode.shots) : [];
   oppShots.forEach(k => {
-    const [x,y] = k.split(",");
-    const cell = [...myBoardDiv.children].find(n => n.dataset.x == x && n.dataset.y == y);
-    if(!cell) return;
-    const wasShip = placedShips.flat().includes(k);
-    if(wasShip){ cell.style.background = "#d9534f"; cell.textContent = "🔥"; } // hit
-    else { cell.style.background = "#4aa3ff"; cell.textContent = "🌊"; } // miss
+    const [x, y] = k.split(",");
+    const cell = [...myBoardDiv.children].find(c => c.dataset.x == x && c.dataset.y == y);
+    if (!cell) return;
+    if (placedShips.flat().includes(k)) {
+      // hit
+      cell.style.background = "#d9534f";
+      cell.textContent = "🔥";
+    } else {
+      // miss
+      cell.style.background = "#4aa3ff";
+      cell.textContent = "🌊";
+    }
   });
 
-  // my shots on enemy board
-  const myShotsNode = data[username] && data[username].shots ? Object.keys(data[username].shots) : [];
-  myShotsNode.forEach(k => {
-    const [x,y] = k.split(",");
-    const cell = [...enemyBoardDiv.children].find(n => n.dataset.x == x && n.dataset.y == y);
-    if(!cell) return;
-    const enemyShips = data[opponent] && data[opponent].ships ? data[opponent].ships : [];
-    if(enemyShips.includes(k)){ cell.style.background = "#d9534f"; cell.textContent = "🔥"; }
-    else { cell.style.background = "#4aa3ff"; cell.textContent = "🌊"; }
+  // enemy board: show my shots and hits/misses (but not enemy ships)
+  const myShots = (myNode && myNode.shots) ? Object.keys(myNode.shots) : [];
+  myShots.forEach(k => {
+    const [x, y] = k.split(",");
+    const cell = [...enemyBoardDiv.children].find(c => c.dataset.x == x && c.dataset.y == y);
+    if (!cell) return;
+    const enemyShips = (oppNode && oppNode.ships) ? oppNode.ships : [];
+    // if any ship contains k -> hit, else miss
+    const isHit = enemyShips.some(ship => ship.includes(k));
+    if (isHit) {
+      cell.style.background = "#d9534f";
+      cell.textContent = "🔥";
+    } else {
+      cell.style.background = "#4aa3ff";
+      cell.textContent = "🌊";
+    }
   });
 }
 
-// update turn popup UI
-function updateTurnDisplay(turnName){
-  isMyTurn = (turnName === username);
+// show turn popup
+function showTurnPopup(name) {
   turnPopup.style.display = "block";
-  turnPlayer.textContent = turnName;
-  // color
-  turnPopup.style.background = isMyTurn ? "linear-gradient(90deg,#00e676,#00c853)" : "rgba(0,0,0,0.5)";
-}
-
-// check win condition and redirect to end
-function checkWin(data){
-  if(!data[username] || !data[opponent]) return;
-  const enemyShips = data[opponent].ships || [];
-  const myShotsSet = data[username].shots || {};
-  const enemyHitsCount = enemyShips.filter(s => myShotsSet[s]).length;
-  if(enemyHitsCount === enemyShips.length){
-    // we win
-    if(!isGuest) endGame(username, opponent);
-    phase = "ended";
-    localStorage.setItem("winner", username);
-    setTimeout(()=> location.href="end.html", 900);
+  turnPlayer.textContent = name === username ? "Jij" : name;
+  // styling based on who
+  if (name === username) {
+    turnPopup.style.background = "linear-gradient(90deg,#00e676,#00c853)";
+  } else {
+    turnPopup.style.background = "rgba(0,0,0,0.55)";
   }
-  // check if opponent sunk all our ships
-  const myShipsFlat = placedShips.flat();
-  const oppShots = data[opponent] && data[opponent].shots ? Object.keys(data[opponent].shots) : [];
-  const hitsOnMe = myShipsFlat.filter(s => oppShots.includes(s)).length;
-  if(hitsOnMe === myShipsFlat.length){
-    if(!isGuest) endGame(opponent, username);
-    phase = "ended";
-    localStorage.setItem("winner", opponent);
-    setTimeout(()=> location.href="end.html", 900);
-  }
+  // hide after 2.5s
+  setTimeout(() => {
+    turnPopup.style.display = "none";
+  }, 2500);
 }
 
-// end game update leaderboard
-async function endGame(winner, loser){
-  const wSnap = await get(ref(db, "users/" + winner));
-  const lSnap = await get(ref(db, "users/" + loser));
-  const w = wSnap.exists() ? wSnap.val() : { wins:0, games:0 };
-  const l = lSnap.exists() ? lSnap.val() : { wins:0, games:0 };
-  await update(ref(db, "users/" + winner), { wins: (w.wins||0) + 1, games: (w.games||0) + 1 });
-  await update(ref(db, "users/" + loser), { games: (l.games||0) + 1 });
+// confirm shot safety (prevent accidental power use)
+function confirmShotSafety() {
+  return true; // placeholder: could prompt if needed
 }
 
-// listen lobby and game updated states
-onValue(lobbyRef, async (snap) => {
+/* Additional listener: if opponent writes ships+ready to games node,
+   and local placedShips already set and local has clicked done, we start playing. */
+// watch games node to detect when both players placed and ready
+onValue(gameRef, async (snap) => {
   const data = snap.val() || {};
-  opponent = (data.host === username) ? data.guest : data.host;
-  // if both ready and both have placed their ships in games node - start playing
-  // Note: lobbyReady handled earlier in lobby.html; here we also watch the games node
-  const gSnap = await get(ref(db, "games/" + lobbyCode));
-  const gdata = gSnap.val() || {};
-  // when both players have a 'ships' array in games node -> show that both placed
-  if(gdata[username] && gdata[opponent] && gdata[username].ships && gdata[opponent].ships){
-    // if local hasn't written our ships yet, make sure they are present
-    if(placedShips.length > 0 && (!gdata[username] || !gdata[username].ships || gdata[username].ships.length===0)){
-      // write our ships
-      await set(ref(db, `games/${lobbyCode}/${username}`), { ships: placedShips.flat(), shots: {} });
+  if (!data) return;
+  const self = data[username] || {};
+  const opp = data[opponent] || {};
+  // if opponent exists and both have ships arrays & both ready flags (games/{lobby}/{player}.ready)
+  if (self && opp && Array.isArray(self.ships) && Array.isArray(opp.ships) && self.ready && opp.ready) {
+    // ensure local placedShips reflect self.ships if we just navigated here from lobby and not placed locally
+    if (placedShips.length === 0 && self.ships.length > 0) {
+      // adopt ships from DB (shouldn't normally happen if we placed locally)
+      placedShips = self.ships;
+      // render them on board
+      placedShips.forEach(ship => {
+        ship.forEach(k => {
+          const [cx, cy] = k.split(",");
+          const cell = [...myBoardDiv.children].find(c => c.dataset.x == cx && c.dataset.y == cy);
+          if (cell) {
+            cell.style.background = "#4caf50";
+            cell.textContent = "🚢";
+          }
+        });
+      });
+      // no local shipLengths left
+      shipLengths = [];
+      doneBtn.style.display = "none";
     }
-    // proceed to playing when turn exists or after setting initial turn
-    if(!gdata.turn){
-      // set random first turn
+
+    // if both ready and not yet playing, set turn if missing and go to playing
+    if (!data.turn) {
       const first = Math.random() < 0.5 ? username : opponent;
-      await update(ref(db, `games/${lobbyCode}`), { turn: first });
+      await update(gameRef, { turn: first });
     }
-    // set phase playing
     phase = "playing";
+    gameNote.textContent = "Spel gestart!";
   }
-});
-
-// watch games node for realtime updates to render boards and turn
-onValue(gameRef, (snap) => {
-  const data = snap.val() || {};
-  if(Object.keys(data).length === 0) return;
-  renderBoards(data);
-  if(data.turn) updateTurnDisplay(data.turn);
-  checkWin(data);
-});
-
-// navigate to home
-toHome.addEventListener("click", ()=>{
-  window.location.href = "home.html";
 });
