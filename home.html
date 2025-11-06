@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8">
+  <title>Home - Zeeslag</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="container center">
+    <h1>Welkom, <span id="playerName"></span> ⚓</h1>
+    <button onclick="location.href='lobby.html'">Maak Lobby</button>
+    <button onclick="joinLobby()">Join Lobby</button>
+    <button onclick="location.href='leaderboard.html'">🏆 Leaderboard</button>
+    <button class="secondary" onclick="logout()">Logout</button>
+  </div>
+
+  <script>
+    document.getElementById("playerName").innerText = localStorage.getItem("username");
+
+    function joinLobby() {
+      const code = prompt("Voer de lobby code in:");
+      if (code) {
+        localStorage.setItem("lobbyCode", code);
+        location.href = "game.html";
+      }
+    }
+
+    function logout() {
+      localStorage.clear();
+      location.href = "index.html";
+    }
+  </script>
+</body>
+</html>
