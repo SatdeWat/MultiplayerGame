@@ -1,131 +1,31 @@
-/* Algemene stijl */
-body {
-  margin: 0;
-  padding: 0;
-  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-  background: linear-gradient(to bottom, #1e3c72, #2a5298);
-  color: #fff;
-  text-align: center;
-}
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Zeeslag - Spel</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="container">
+  <h1>⚓ Zeeslag ⚓</h1>
 
-.container {
-  max-width: 600px;
-  margin: 50px auto;
-  padding: 20px;
-  background: rgba(0,0,0,0.6);
-  border-radius: 15px;
-  box-shadow: 0 0 20px rgba(0,0,0,0.5);
-}
+  <div id="turnInfo">Wachten op tegenstander...</div>
+  <div id="gameMessage">Plaats je schepen</div>
 
-/* Titels */
-h1 {
-  font-size: 2.5rem;
-  margin-bottom: 20px;
-  color: #ffd700;
-  text-shadow: 2px 2px 5px #000;
-}
+  <div style="display:flex; justify-content:center; gap:50px; flex-wrap:wrap;">
+    <div>
+      <h3>Jouw Bord</h3>
+      <div id="myBoard"></div>
+      <button id="readyBtn">Klaar</button>
+    </div>
+    <div>
+      <h3>Tegenstander Bord</h3>
+      <div id="enemyBoard"></div>
+    </div>
+  </div>
+</div>
 
-/* Inputs */
-input[type="text"], input[type="password"] {
-  width: 80%;
-  padding: 10px;
-  margin: 10px 0;
-  border-radius: 8px;
-  border: none;
-  font-size: 1rem;
-}
-
-/* Buttons */
-button {
-  padding: 10px 20px;
-  margin: 10px 5px;
-  border: none;
-  border-radius: 10px;
-  font-size: 1rem;
-  cursor: pointer;
-  background: linear-gradient(to bottom, #4caf50, #2e7d32);
-  color: #fff;
-  transition: transform 0.2s, box-shadow 0.2s;
-}
-
-button:hover {
-  transform: scale(1.05);
-  box-shadow: 0 0 15px #fff;
-}
-
-button.secondary {
-  background: linear-gradient(to bottom, #f44336, #d32f2f);
-}
-
-/* Game board */
-#myBoard, #enemyBoard {
-  margin: 20px auto;
-  display: grid;
-  gap: 2px;
-}
-
-.cell {
-  width: 40px;
-  height: 40px;
-  background: rgba(255,255,255,0.1);
-  border-radius: 5px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 1.5rem;
-  cursor: pointer;
-  transition: background 0.3s, transform 0.2s;
-}
-
-.cell:hover {
-  background: rgba(255,255,255,0.3);
-  transform: scale(1.1);
-}
-
-/* Status & messages */
-#turnInfo, #gameMessage, #status, #loginMessage {
-  margin-top: 10px;
-  font-size: 1.2rem;
-  color: #fff;
-  text-shadow: 1px 1px 3px #000;
-}
-
-/* Gamemode / size selection */
-#gamemodeSelection, #sizeSelection {
-  margin-top: 20px;
-}
-
-.modeBtn, .sizeBtn {
-  background: linear-gradient(to bottom, #2196f3, #1565c0);
-}
-
-.modeBtn:hover, .sizeBtn:hover {
-  background: linear-gradient(to bottom, #64b5f6, #1e88e5);
-}
-
-/* Popups bovenin (wie aan de beurt) */
-#turnInfo {
-  background: rgba(0,0,0,0.7);
-  padding: 10px;
-  border-radius: 10px;
-  font-weight: bold;
-}
-
-/* Win / lose message */
-#gameMessage {
-  font-size: 1.5rem;
-  margin-top: 15px;
-  color: #ffd700;
-}
-
-/* Responsive */
-@media screen and (max-width: 500px){
-  .cell {
-    width: 30px;
-    height: 30px;
-    font-size: 1.2rem;
-  }
-  input[type="text"], input[type="password"] {
-    width: 90%;
-  }
-}
+<script type="module" src="game.js"></script>
+</body>
+</html>
