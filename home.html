@@ -10,22 +10,28 @@
 <div class="container">
   <h1>⚓ Zeeslag ⚓</h1>
   <p>Welkom, <span id="userDisplay"></span></p>
-  
-  <button id="createLobbyBtn">Maak lobby</button>
+
+  <button id="createLobbyBtn">Maak Lobby</button>
+  <button id="joinLobbyBtn">Join Lobby</button>
+  <button id="leaderboardBtn">Leaderboard</button>
+  <button id="logoutBtn" class="secondary">Logout</button>
+
+  <!-- Gamemode selectie -->
   <div id="gamemodeSelection" style="display:none;">
-    <h3>Kies gamemode:</h3>
-    <button class="modeBtn" data-size="10" data-ships="3">Classic 10x10 - 3 schepen</button>
-    <button class="modeBtn" data-size="15" data-ships="4">Streak 15x15 - 4 schepen</button>
-    <button class="modeBtn" data-size="20" data-ships="6">Power 20x20 - 6 schepen</button>
+    <h3>Kies Gamemode</h3>
+    <button class="modeBtn" data-mode="classic">Classic</button>
+    <button class="modeBtn" data-mode="streak">Streak</button>
+    <button class="modeBtn" data-mode="power">Power</button>
     <button id="backBtn" class="secondary">Terug</button>
   </div>
 
-  <div id="joinSection">
-    <input type="text" id="joinCode" placeholder="Lobbycode invullen">
-    <button id="joinLobby">Join lobby</button>
+  <!-- Bord size selectie -->
+  <div id="sizeSelection" style="display:none;">
+    <h3>Kies Bordgrootte en aantal schepen</h3>
+    <button class="sizeBtn" data-size="10" data-ships="3">10x10 - 3 schepen</button>
+    <button class="sizeBtn" data-size="15" data-ships="4">15x15 - 4 schepen</button>
+    <button class="sizeBtn" data-size="20" data-ships="6">20x20 - 6 schepen</button>
   </div>
-
-  <button id="logoutBtn" class="secondary">Logout</button>
 </div>
 
 <script type="module">
@@ -36,29 +42,43 @@ if(!username) window.location.href="index.html";
 document.getElementById("userDisplay").innerText=username;
 
 const createLobbyBtn=document.getElementById("createLobbyBtn");
+const joinLobbyBtn=document.getElementById("joinLobbyBtn");
+const leaderboardBtn=document.getElementById("leaderboardBtn");
+const logoutBtn=document.getElementById("logoutBtn");
 const gamemodeSelection=document.getElementById("gamemodeSelection");
 const modeBtns=document.querySelectorAll(".modeBtn");
-const joinLobbyBtn=document.getElementById("joinLobby");
-const joinCodeInput=document.getElementById("joinCode");
-const logoutBtn=document.getElementById("logoutBtn");
+const sizeSelection=document.getElementById("sizeSelection");
+const sizeBtns=document.querySelectorAll(".sizeBtn");
 const backBtn=document.getElementById("backBtn");
 
-// Maak lobby knop
+// Klik Maak Lobby -> toon gamemodes
 createLobbyBtn.addEventListener("click", ()=> {
   gamemodeSelection.style.display="block";
-  document.getElementById("joinSection").style.display="none";
   createLobbyBtn.style.display="none";
+  joinLobbyBtn.style.display="none";
+  leaderboardBtn.style.display="none";
 });
 
 // Terug knop
-backBtn.addEventListener("click", ()=> {
+backBtn.addEventListener("click", ()=>{
   gamemodeSelection.style.display="none";
-  document.getElementById("joinSection").style.display="block";
   createLobbyBtn.style.display="block";
+  joinLobbyBtn.style.display="block";
+  leaderboardBtn.style.display="block";
 });
 
-// Gamemode kiezen
+// Gamemode gekozen -> toon bord size
+let selectedMode = "";
 modeBtns.forEach(btn=>{
+  btn.addEventListener("click", ()=>{
+    selectedMode = btn.dataset.mode;
+    gamemodeSelection.style.display="none";
+    sizeSelection.style.display="block";
+  });
+});
+
+// Bord size gekozen -> maak lobby in DB
+sizeBtns.forEach(async btn=>{
   btn.addEventListener("click", async ()=>{
     const size=parseInt(btn.dataset.size);
     const ships=parseInt(btn.dataset.ships);
@@ -67,31 +87,24 @@ modeBtns.forEach(btn=>{
     await set(ref(db,"lobbies/"+lobbyCode),{
       host:username,
       guest:"",
+      mode:selectedMode,
       size:size,
       ships:ships,
       gameStarted:false
     });
 
-    localStorage.setItem("lobbyCode",lobbyCode);
-    window.location.href="game.html";
+    localStorage.setItem("lobbyCode", lobbyCode);
+    window.location.href="lobby.html";
   });
 });
 
 // Join lobby
-joinLobbyBtn.addEventListener("click", async ()=>{
-  const code=joinCodeInput.value.trim();
-  if(!code) return alert("Vul een lobbycode in!");
-  const snap=await get(ref(db,"lobbies/"+code));
-  if(!snap.exists()) return alert("Lobby niet gevonden!");
-  const data=snap.val();
-  if(data.guest && data.guest!="") return alert("Lobby is vol!");
-  await update(ref(db,"lobbies/"+code),{guest:username});
-  localStorage.setItem("lobbyCode",code);
-  window.location.href="game.html";
+joinLobbyBtn.addEventListener("click", ()=>{
+  window.location.href="join.html";
 });
 
 // Logout
-logoutBtn.addEventListener("click",()=>{
+logoutBtn.addEventListener("click", ()=>{
   localStorage.removeItem("username");
   localStorage.removeItem("lobbyCode");
   window.location.href="index.html";
