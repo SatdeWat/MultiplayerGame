@@ -6,7 +6,8 @@ import {
   dbSet as set,
   dbGet as get,
   dbUpdate as update,
-  dbOnValue as onValue
+  dbOnValue as onValue,
+  dbOnValue as onValue /* keep consistent import name usage */
 } from "./firebase.js";
 
 const username = localStorage.getItem("username");
@@ -49,6 +50,7 @@ let shipLengths = [];
 let placedShips = []; // local ships array-of-arrays
 let phase = "placing";
 let myPowerShots = 0;
+let myPowerLocked = false; // nieuwe flag: nadat je een power hebt gebruikt blijft 'locked' true totdat je een nieuw schip zinkt
 let usingPowerMode = false;
 let awaitingTurnChange = false; // prevents multi-click per turn
 let lastTurnShown = null;
@@ -256,11 +258,17 @@ function createEndOverlay() {
   endOverlay.style.display = "none";
   return endOverlay;
 }
-function showEndOverlay(winnerText, remStatusOpp = false) {
+function showEndOverlay(winnerKey, remStatusOpp = false) {
   const overlay = createEndOverlay();
   overlay.style.display = "flex";
   const title = overlay.querySelector("#end-title");
-  if (title) title.textContent = `${winnerText} heeft gewonnen!`;
+  if (title) {
+    if (winnerKey === username) {
+      title.textContent = `Je hebt gewonnen!`;
+    } else {
+      title.textContent = `Je hebt verloren!`;
+    }
+  }
   const remNote = overlay.querySelector("#rem-note");
   if (remNote) remNote.textContent = remStatusOpp ? "Tegenstander heeft ook rematch gevraagd." : "Wacht op rematch of vraag er zelf een aan.";
 }
@@ -348,12 +356,17 @@ function widenContainer() {
     const meNode = data[username] || {};
     const oppNode = data[opponent] || {};
 
-    // powerShots UI
-    if (meNode.powerShots !== undefined) {
+    // powerShots UI (nu met lock)
+    if (meNode.powerShots !== undefined || meNode.powerLocked !== undefined) {
       myPowerShots = meNode.powerShots || 0;
+      myPowerLocked = !!meNode.powerLocked;
       powerCountSpan.textContent = myPowerShots;
       usePowerBtn.style.display = myPowerShots > 0 ? "inline-block" : "none";
-      if (myPowerShots <= 0) usePowerBtn.disabled = true;
+      // disable if no shots or locked
+      usePowerBtn.disabled = myPowerShots <= 0 || myPowerLocked;
+      if (!usingPowerMode) {
+        usePowerBtn.textContent = `Use PowerShot (${myPowerShots})`;
+      }
     }
 
     // adopt ships from DB if page reloaded
@@ -419,8 +432,8 @@ function widenContainer() {
         };
         await set(ref(db, `lobbies/${newCode}`), newLobbyObj);
         await set(ref(db, `games/${newCode}`), {
-          [username]: { ships: [], shots: {}, ready: false, powerShots: 0 },
-          [opponent]: { ships: [], shots: {}, ready: false, powerShots: 0 },
+          [username]: { ships: [], shots: {}, ready: false, powerShots: 0, powerLocked: false },
+          [opponent]: { ships: [], shots: {}, ready: false, powerShots: 0, powerLocked: false },
           turn: null,
           rematchRequests: {}
         });
@@ -453,8 +466,8 @@ function widenContainer() {
     const winner = detectWinner(data);
     if (winner && phase !== "ended") {
       phase = "ended";
-      // show animated overlay
-      showEndOverlay(winner === username ? "Jij" : winner, !!(data.rematchRequests && data.rematchRequests[opponent]));
+      // show animated overlay — nu met echte winnaar-key zodat we kunnen zeggen of jij gewonnen of verloren hebt
+      showEndOverlay(winner, !!(data.rematchRequests && data.rematchRequests[opponent]));
       // show rematch indicator as well
     }
 
@@ -484,7 +497,8 @@ function widenContainer() {
       ships: placedShips.slice(),
       shots: {},
       ready: true,
-      powerShots: myPowerShots || 0
+      powerShots: myPowerShots || 0,
+      powerLocked: myPowerLocked || false
     });
     phase = "waiting";
     doneBtn.style.display = "none";
@@ -494,11 +508,13 @@ function widenContainer() {
   });
 
   // use power btn
-  usePowerBtn.addEventListener("click", () => {
+  usePowerBtn.addEventListener("click", async () => {
     if (myPowerShots <= 0) return;
+    if (myPowerLocked) return; // respect locked state
     usingPowerMode = true;
     usePowerBtn.disabled = true;
     usePowerBtn.textContent = "Kies 3x3 target...";
+    // we do NOT set powerLocked in DB yet; we only lock after the shot is actually performed (consume)
   });
 
   // back
@@ -587,6 +603,11 @@ async function onEnemyCellClick(x, y, type, cellEl) {
   if (!g.turn) return;
   if (g.turn !== username) return;
 
+  // get current shots snapshot (before writing)
+  const shotsRef = ref(db, `games/${lobbyCode}/${username}/shots`);
+  const snapShots = await get(shotsRef);
+  const prevShots = snapShots.exists() ? snapShots.val() : {};
+
   // powershot active?
   if (usingPowerMode) {
     // build 3x3
@@ -595,36 +616,34 @@ async function onEnemyCellClick(x, y, type, cellEl) {
       const sx = x + dx, sy = y + dy;
       if (sx >= 0 && sx < size && sy >= 0 && sy < size) toShot.push(`${sx},${sy}`);
     }
-    // write shots
-    const shotsRef = ref(db, `games/${lobbyCode}/${username}/shots`);
-    const snapShots = await get(shotsRef);
-    const current = snapShots.exists() ? snapShots.val() : {};
+    // write shots: merge prevShots + toShot
+    const current = Object.assign({}, prevShots);
     toShot.forEach(k => current[k] = true);
     // set awaiting to block further clicks until DB turn changes
     awaitingTurnChange = true;
     await update(shotsRef, current);
-    // consume one powerShot locally & in DB
+    // consume one powerShot locally & in DB and lock until next sink
     myPowerShots = Math.max(0, myPowerShots - 1);
-    await update(ref(db, `games/${lobbyCode}/${username}`), { powerShots: myPowerShots });
+    myPowerLocked = true;
+    await update(ref(db, `games/${lobbyCode}/${username}`), { powerShots: myPowerShots, powerLocked: true });
     usingPowerMode = false;
     usePowerBtn.disabled = true;
     usePowerBtn.textContent = `Use PowerShot (${myPowerShots})`;
-    // resolve turn logic (power mode still switches after power shot)
-    await resolveTurnAfterShots(current, true);
+    // resolve turn logic (power mode still switches after power shot unless streak rule)
+    const newShotKeys = toShot.slice();
+    await resolveTurnAfterShots(prevShots, current, newShotKeys, true);
     return;
   }
 
   // normal single shot
   const key = `${x},${y}`;
-  const shotsRef = ref(db, `games/${lobbyCode}/${username}/shots`);
-  const snapShots = await get(shotsRef);
-  const current = snapShots.exists() ? snapShots.val() : {};
+  const current = Object.assign({}, prevShots);
   if (current[key]) return;
   current[key] = true;
   // block multi-clicks until DB updates
   awaitingTurnChange = true;
   await update(shotsRef, current);
-  await resolveTurnAfterShots(current, false);
+  await resolveTurnAfterShots(prevShots, current, [key], false);
 }
 
 // ---------- hit detection & turn logic ----------
@@ -640,34 +659,52 @@ function didShotHit(shotsObj, opponentShipsGrouped) {
   return { hit: false, sunkIndex: null };
 }
 
-async function resolveTurnAfterShots(myShotsObj, wasPowerShot) {
+async function resolveTurnAfterShots(prevShotsObj, myShotsObj, newShotKeys, wasPowerShot) {
   // read latest game & opponent ships
   const gsnap = await get(gameRef);
   const g = gsnap.val() || {};
   const oppData = g[opponent] || {};
   const oppShips = oppData.ships || [];
-  const result = didShotHit(myShotsObj, oppShips);
+
+  // Determine whether any of the newly fired shot keys hit an enemy ship
+  let anyNewHit = false;
+  for (let i = 0; i < newShotKeys.length; i++) {
+    const k = newShotKeys[i];
+    if (oppShips.some(ship => ship.includes(k))) { anyNewHit = true; break; }
+  }
+
+  // Determine how many ships were newly sunk as a result of these shots
+  let newlySunkCount = 0;
+  for (let si = 0; si < oppShips.length; si++) {
+    const ship = oppShips[si];
+    const wasSunkBefore = ship.every(c => !!prevShotsObj[c]);
+    const isSunkNow = ship.every(c => !!myShotsObj[c]);
+    if (!wasSunkBefore && isSunkNow) newlySunkCount++;
+  }
 
   if (mode === "streak") {
     // in streak: keep turn on hit, else switch
-    if (result.hit) {
+    if (anyNewHit) {
       await update(gameRef, { turn: username });
     } else {
       await update(gameRef, { turn: opponent });
     }
   } else {
-    // classic & power: always switch (BUT for power grant if sunk)
-    if (result.sunkIndex !== null && mode === "power") {
-      // grant one powerShot (safe-read/write)
+    // classic & power: switch normally, but in power mode grant powers for newly sunk ships
+    if (mode === "power" && newlySunkCount > 0) {
+      // grant one powerShot per newly sunk ship; also unlock the power button (powerLocked = false)
       const selfRef = ref(db, `games/${lobbyCode}/${username}`);
       const selfSnap = await get(selfRef);
       const selfData = selfSnap.exists() ? selfSnap.val() : {};
-      const nowPower = (selfData.powerShots || 0) + 1;
-      await update(selfRef, { powerShots: nowPower });
+      const nowPower = (selfData.powerShots || 0) + newlySunkCount;
+      await update(selfRef, { powerShots: nowPower, powerLocked: false });
       myPowerShots = nowPower;
-      // update UI
+      myPowerLocked = false;
+      // update UI locally
       powerCountSpan.textContent = myPowerShots;
       usePowerBtn.style.display = myPowerShots > 0 ? "inline-block" : "none";
+      usePowerBtn.disabled = myPowerLocked || myPowerShots <= 0;
+      usePowerBtn.textContent = `Use PowerShot (${myPowerShots})`;
     }
     await update(gameRef, { turn: opponent });
   }
