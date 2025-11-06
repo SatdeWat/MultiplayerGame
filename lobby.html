@@ -1,27 +1,96 @@
-<!DOCTYPE html>
+<!-- lobby.html -->
+<!doctype html>
 <html lang="nl">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>Lobby - Zeeslag</title>
-<link rel="stylesheet" href="styles.css">
+  <meta charset="utf-8">
+  <title>Zeeslag — Lobby</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<h1>Lobby</h1>
-<select id="gamemode">
-  <option value="10">Classic 10x10</option>
-  <option value="15">Power 15x15</option>
-</select>
-<div>
-  <button id="create-lobby">Maak Lobby</button>
-  <input type="text" id="join-code" placeholder="Code invullen">
-  <button id="join-lobby">Join Lobby</button>
-</div>
-<div id="my-lobby" class="hidden">
-  <p>Lobby code: <span id="lobby-code"></span></p>
-  <p id="lobby-status"></p>
-  <button id="go-to-game" class="hidden">Start Game</button>
-</div>
-<script type="module" src="lobby.js"></script>
+  <div class="container">
+    <div class="header">
+      <h2>Lobby</h2>
+      <div><span id="playerName"></span> <button id="btnLogout" class="small">Logout</button></div>
+    </div>
+
+    <div class="panel">
+      <div class="title">Maak of join een lobby</div>
+      <div class="flex">
+        <select id="modeSelect">
+          <option value="classic">Classic</option>
+          <option value="streak">Streak</option>
+          <option value="power">Power</option>
+        </select>
+        <button id="btnCreate" class="small">Maak Lobby</button>
+        <input id="joinCode" placeholder="Lobby code">
+        <button id="btnJoin" class="small">Join Lobby</button>
+      </div>
+      <p id="status" style="margin-top:8px;color:var(--muted)"></p>
+    </div>
+  </div>
+
+  <script type="module">
+    import { db, dbRef, dbSet, dbGet, dbOnValue, dbUpdate } from './firebase.js';
+
+    const player = localStorage.getItem('player');
+    if(!player) location.href = 'index.html';
+    document.getElementById('playerName').textContent = player;
+
+    document.getElementById('btnLogout').addEventListener('click', ()=>{
+      localStorage.removeItem('player');
+      location.href='index.html';
+    });
+
+    function makeCode(){ return Math.floor(1000 + Math.random()*9000).toString(); }
+
+    document.getElementById('btnCreate').addEventListener('click', async ()=>{
+      const mode = document.getElementById('modeSelect').value;
+      const code = makeCode();
+      const lobbyObj = {
+        players: { host: player },
+        status: 'waiting',
+        mode: mode,
+        created: Date.now()
+      };
+      await dbSet(dbRef(db, 'lobbies/' + code), lobbyObj);
+      localStorage.setItem('lobbyCode', code);
+      watchLobby(code);
+      document.getElementById('status').textContent = 'Lobby gemaakt: ' + code + ' — wacht op 2de speler...';
+    });
+
+    document.getElementById('btnJoin').addEventListener('click', async ()=>{
+      const code = document.getElementById('joinCode').value.trim();
+      if(!code) return document.getElementById('status').textContent = 'Vul lobby code.';
+      const snap = await dbGet(dbRef(db, 'lobbies/' + code));
+      if(!snap.exists()) return document.getElementById('status').textContent = 'Lobby niet gevonden.';
+      const val = snap.val();
+      if(val.players && val.players.guest) return document.getElementById('status').textContent = 'Lobby al vol.';
+      await dbSet(dbRef(db, 'lobbies/' + code + '/players/guest'), player);
+      await dbSet(dbRef(db, 'lobbies/' + code + '/status'), 'ready');
+      localStorage.setItem('lobbyCode', code);
+      watchLobby(code);
+      document.getElementById('status').textContent = 'Je joined lobby ' + code;
+    });
+
+    function watchLobby(code){
+      const ref = dbRef(db, 'lobbies/' + code);
+      dbOnValue(ref, (snap)=>{
+        if(!snap.exists()) return;
+        const l = snap.val();
+        if(l.players && l.players.host && l.players.guest){
+          document.getElementById('status').textContent = '2 spelers: ' + l.players.host + ' vs ' + l.players.guest;
+          // sturen naar place-ships
+          setTimeout(()=> location.href = 'place-ships.html', 700);
+        } else {
+          document.getElementById('status').textContent = 'Wachten op tweede speler...';
+        }
+      });
+    }
+
+    // als we al in een lobby zaten -> meteen watchen
+    const existing = localStorage.getItem('lobbyCode');
+    if(existing) watchLobby(existing);
+  </script>
 </body>
 </html>
