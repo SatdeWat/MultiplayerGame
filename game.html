@@ -8,23 +8,28 @@
 </head>
 <body>
 <div class="container">
-  <h1>⚓ Zeeslag ⚓</h1>
-  <div id="turnInfo">Wachten op tegenstander...</div>
-  <div id="readyStatus">Jij klaar: ❌ | Tegenstander klaar: ❌</div>
-  <div id="gameMessage">Plaats je schepen</div>
+  <h1>⚓ Zeeslag - Spel ⚓</h1>
 
-  <div style="display:flex; justify-content:center; gap:50px; flex-wrap:wrap;">
-    <div>
-      <h3>Jouw Bord</h3>
-      <div id="myBoard"></div>
+  <div id="lobbyScreen">
+    <h3>Lobby Code: <span id="lobbyCodeDisplay"></span></h3>
+    <p>Jij: <span id="playerName"></span> ❌</p>
+    <p>Tegenstander: <span id="opponentName">Wachten...</span> ❌</p>
+    <button id="readyBtn">Klaar</button>
+  </div>
+
+  <div id="gameScreen" style="display:none;">
+    <p id="gameMessage"></p>
+    <p id="turnInfo"></p>
+    <div class="boards">
       <div>
-        <button id="rotateBtn">Horizontaal/Verticaal</button>
+        <h3>Jouw Bord</h3>
+        <div id="myBoard"></div>
+        <button id="rotateBtn">Rotate</button>
       </div>
-      <button id="readyBtn">Klaar</button>
-    </div>
-    <div>
-      <h3>Tegenstander Bord</h3>
-      <div id="enemyBoard"></div>
+      <div>
+        <h3>Tegenstander Bord</h3>
+        <div id="enemyBoard"></div>
+      </div>
     </div>
   </div>
 </div>
