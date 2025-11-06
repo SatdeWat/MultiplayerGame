@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Zeeslag - Eind</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="container">
+  <h1>⚓ Zeeslag - Eindscherm ⚓</h1>
+  <h2 id="resultText"></h2>
+  <button id="backHomeBtn">Terug naar Home</button>
+</div>
+
+<script>
+const winner = localStorage.getItem("winner");
+const username = localStorage.getItem("username");
+document.getElementById("resultText").textContent = winner === username ? "🎉 Jij hebt gewonnen!" : "💀 Je hebt verloren!";
+document.getElementById("backHomeBtn").addEventListener("click", ()=>{
+  window.location.href="home.html";
+});
+</script>
+</body>
+</html>
