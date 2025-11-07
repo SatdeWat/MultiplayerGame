@@ -41,6 +41,7 @@ let gameRef = ref(db, `games/${lobbyCode}`);
 
 // State
 let lobbyData = null;
+let lastGameState = null; // laatste game data snapshot (voor redraws)
 let opponent = null;
 let size = 10;
 let mode = "classic";
@@ -52,6 +53,9 @@ let myPowerShots = 0;
 let usingPowerMode = false;
 let awaitingTurnChange = false; // prevents multi-click per turn
 let lastTurnShown = null;
+
+// hide own ships toggle
+let hideOwnShips = false;
 
 // dynamic cell size per board size (20x20 smaller)
 function getCellPxForSize(n) {
@@ -260,7 +264,12 @@ function showEndOverlay(winnerText, remStatusOpp = false) {
   const overlay = createEndOverlay();
   overlay.style.display = "flex";
   const title = overlay.querySelector("#end-title");
-  if (title) title.textContent = `${winnerText} heeft gewonnen!`;
+  // determine win/loss relative to current player
+  let won = false;
+  if (winnerText === "Jij") won = true;
+  // also handle case where actual username passed
+  if (winnerText === username) won = true;
+  if (title) title.textContent = won ? "Jij hebt gewonnen!" : "Jij hebt verloren!";
   const remNote = overlay.querySelector("#rem-note");
   if (remNote) remNote.textContent = remStatusOpp ? "Tegenstander heeft ook rematch gevraagd." : "Wacht op rematch of vraag er zelf een aan.";
 }
@@ -295,6 +304,29 @@ function widenContainer() {
   ensureReadyIndicator(enemyBoardTitle);
   ensureRematchIndicator(myBoardTitle);
   ensureRematchIndicator(enemyBoardTitle);
+
+  // add hide-own-ships toggle button to myBoardTitle area
+  try {
+    if (myBoardTitle) {
+      const hideBtn = document.createElement("button");
+      hideBtn.id = "hideShipsBtn";
+      hideBtn.textContent = "Verberg mijn schepen";
+      Object.assign(hideBtn.style, {
+        marginLeft: "10px",
+        padding: "4px 8px",
+        fontSize: "12px",
+        cursor: "pointer",
+        borderRadius: "6px"
+      });
+      hideBtn.addEventListener("click", () => {
+        hideOwnShips = !hideOwnShips;
+        hideBtn.textContent = hideOwnShips ? "Toon mijn schepen" : "Verberg mijn schepen";
+        // redraw last known game state so visual updates apply
+        renderBoards(lastGameState || {});
+      });
+      myBoardTitle.appendChild(hideBtn);
+    }
+  } catch (e) { /* ignore */ }
 
   // read lobby
   lobbyRef = ref(db, `lobbies/${lobbyCode}`);
@@ -340,6 +372,7 @@ function widenContainer() {
   onValue(gameRef, async (gsnap) => {
     const data = gsnap.val() || {};
     if (!data) return;
+    lastGameState = data;
 
     // player keys present
     const playerKeys = Object.keys(data).filter(k => k !== "turn" && k !== "rematchRequests" && k !== "rematchStarted");
@@ -353,7 +386,8 @@ function widenContainer() {
       myPowerShots = meNode.powerShots || 0;
       powerCountSpan.textContent = myPowerShots;
       usePowerBtn.style.display = myPowerShots > 0 ? "inline-block" : "none";
-      if (myPowerShots <= 0) usePowerBtn.disabled = true;
+      usePowerBtn.textContent = `Use PowerShot (${myPowerShots})`;
+      usePowerBtn.disabled = myPowerShots <= 0;
     }
 
     // adopt ships from DB if page reloaded
@@ -607,6 +641,7 @@ async function onEnemyCellClick(x, y, type, cellEl) {
     myPowerShots = Math.max(0, myPowerShots - 1);
     await update(ref(db, `games/${lobbyCode}/${username}`), { powerShots: myPowerShots });
     usingPowerMode = false;
+    // per requirement: disable power button until next whole-ship-sink (we already decremented)
     usePowerBtn.disabled = true;
     usePowerBtn.textContent = `Use PowerShot (${myPowerShots})`;
     // resolve turn logic (power mode still switches after power shot)
@@ -665,9 +700,12 @@ async function resolveTurnAfterShots(myShotsObj, wasPowerShot) {
       const nowPower = (selfData.powerShots || 0) + 1;
       await update(selfRef, { powerShots: nowPower });
       myPowerShots = nowPower;
-      // update UI
+      // update UI - enable power button since you just earned one
       powerCountSpan.textContent = myPowerShots;
       usePowerBtn.style.display = myPowerShots > 0 ? "inline-block" : "none";
+      usePowerBtn.textContent = `Use PowerShot (${myPowerShots})`;
+      // per requirement: allow use now (enable)
+      usePowerBtn.disabled = myPowerShots <= 0;
     }
     await update(gameRef, { turn: opponent });
   }
@@ -676,8 +714,8 @@ async function resolveTurnAfterShots(myShotsObj, wasPowerShot) {
 
 // ---------- render boards (sunk detection + skulls) ----------
 function renderBoards(data) {
-  const myNode = data[username] || {};
-  const oppNode = data[opponent] || {};
+  const myNode = data ? (data[username] || {}) : {};
+  const oppNode = data ? (data[opponent] || {}) : {};
 
   // MY board: reset non-placed
   [...myBoardDiv.children].forEach(cell => {
@@ -688,11 +726,27 @@ function renderBoards(data) {
       cell.style.color = "";
     }
   });
-  // mark placed ships normally
-  placedShips.flat().forEach(k => {
-    const c = findCell(myBoardDiv, k);
-    if (c) { c.style.background = "#4caf50"; c.textContent = "🚢"; c.style.color = ""; }
-  });
+
+  // mark placed ships normally (but respect hideOwnShips)
+  if (!hideOwnShips) {
+    placedShips.flat().forEach(k => {
+      const c = findCell(myBoardDiv, k);
+      if (c) { c.style.background = "#4caf50"; c.textContent = "🚢"; c.style.color = ""; }
+    });
+  } else {
+    // if hiding own ships, ensure non-hit ship cells don't show ship markers
+    placedShips.flat().forEach(k => {
+      const c = findCell(myBoardDiv, k);
+      if (c) { 
+        // leave them with default background unless they were hit (those handled below)
+        if (! (oppNode && oppNode.shots && oppNode.shots[k]) ) {
+          c.style.background = "rgba(255,255,255,0.03)";
+          c.textContent = "";
+          c.style.color = "";
+        }
+      }
+    });
+  }
 
   // opponent shots on my board -> hits/misses and sunk (💀)
   const oppShots = (oppNode && oppNode.shots) ? Object.keys(oppNode.shots) : [];
