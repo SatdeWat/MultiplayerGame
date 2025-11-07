@@ -113,7 +113,7 @@ function setRematchIndicator(titleEl, requested) {
 
 // persistent turn popup
 // Popup moet alleen "Game starts!" (tijdelijk) en vervolgens "Aan de beurt: ..." tonen.
-// User vroeg later: popup net onder de titel van de pagina — we verplaatsen DOM node tijdens init.
+// wordt tijdens init direct onder H1 geplaatst (game.html bevat turnPopup div).
 function persistTurnPopup(name) {
   lastTurnShown = name;
   if (!turnPopup) return;
@@ -316,9 +316,7 @@ function widenContainer() {
   try {
     const pageTitle = document.querySelector("h1");
     if (pageTitle && turnPopup) {
-      // remove from current parent and insert after h1
       pageTitle.after(turnPopup);
-      // small style to center it and add spacing
       turnPopup.style.display = "none";
       turnPopup.style.margin = "8px auto";
       turnPopup.style.width = "fit-content";
@@ -333,7 +331,6 @@ function widenContainer() {
   }
 
   // Add fallback PowerShot button and power counter only if missing.
-  // Prefer to use your existing button in the enemy board center-controls (per provided game.html).
   try {
     if (!usePowerBtn) {
       const center = enemyBoardCard ? enemyBoardCard.querySelector(".center-controls") : null;
@@ -341,11 +338,9 @@ function widenContainer() {
       const btn = document.createElement("button");
       btn.id = "usePowerBtn";
       btn.className = "power-btn";
-      // Use same inner structure as your template: span inside parentheses
       btn.innerHTML = `Use PowerShot (<span id="powerCount">0</span>)`;
-      btn.style.display = "none"; // we'll show it only in power mode (even if 0, show disabled)
+      btn.style.display = "none";
       wrapTarget.appendChild(btn);
-      // reassign globals
       usePowerBtn = document.getElementById("usePowerBtn");
       powerCountSpan = document.getElementById("powerCount");
     }
@@ -369,7 +364,6 @@ function widenContainer() {
       hideBtn.addEventListener("click", () => {
         hideOwnShips = !hideOwnShips;
         hideBtn.textContent = hideOwnShips ? "Toon mijn schepen" : "Verberg mijn schepen";
-        // redraw last known game state so visual updates apply
         renderBoards(lastGameState || {});
       });
       myBoardTitle.appendChild(hideBtn);
@@ -431,11 +425,9 @@ function widenContainer() {
 
     // powerShots UI: show the button whenever gamemode == power (visible), but disable if player has 0
     if (usePowerBtn) {
-      // ensure span text is present
       if (powerCountSpan && meNode.powerShots !== undefined) powerCountSpan.textContent = meNode.powerShots || 0;
-      // display logic: visible if mode is "power", hidden otherwise
       usePowerBtn.style.display = (mode === "power") ? "inline-block" : "none";
-      // disabled when no power shots or when already in usingPowerMode
+      // crucial: disabled when no powers OR already in usingPowerMode
       usePowerBtn.disabled = !(meNode.powerShots > 0) || usingPowerMode;
     }
 
@@ -466,12 +458,10 @@ function widenContainer() {
     // both ready -> start
     if (meNode && oppNode && meNode.ready && oppNode.ready && phase !== "playing") {
       if (!data.turn) {
-        // avoid race: re-check DB just before writing the initial turn
         const firstPick = Math.random() < 0.5 ? username : opponent;
         const fresh = await get(gameRef);
         const freshVal = fresh.exists() ? fresh.val() : {};
         if (!freshVal.turn) {
-          // only this client will succeed in writing if other client hasn't yet
           await update(gameRef, { turn: firstPick });
           const after = await get(gameRef);
           const finalTurn = (after.exists() && after.val().turn) ? after.val().turn : firstPick;
@@ -499,11 +489,8 @@ function widenContainer() {
     // rematch: if both requested and rematch not yet started -> create new lobby & redirect both
     const remReqObj = data.rematchRequests || {};
     if (remReqObj[username] && remReqObj[opponent]) {
-      // only create once: check rematchStarted flag
       if (!data.rematchStarted) {
-        // create new lobby code
         const newCode = generateLobbyCode();
-        // create lobbies/newCode and games/newCode
         const newLobbyObj = {
           host: username,
           guest: opponent,
@@ -518,25 +505,18 @@ function widenContainer() {
           turn: null,
           rematchRequests: {}
         });
-        // write rematchStarted so both clients pick it up
         await update(gameRef, { rematchStarted: newCode });
       } else if (data.rematchStarted) {
-        // when rematchStarted exists: both clients should redirect once to the new lobby code
         const newCode = data.rematchStarted;
-        // clear end overlay & prepare to redirect to same game.html with new lobbyCode
         hideEndOverlay();
-        // update localStorage and navigate (reload) so the init logic picks new lobby
         localStorage.setItem("lobbyCode", newCode);
-        // small delay to let DB updates flush on both sides
         setTimeout(() => {
           window.location.href = "game.html";
         }, 350);
       }
     }
 
-    // if rematchStarted exists (maybe created by opponent first) - ensure we redirect
     if (data.rematchStarted && !(remReqObj[username] && remReqObj[opponent])) {
-      // other side created rematchStarted but we didn't yet request rematch -> still redirect to new lobby immediately
       const newCode = data.rematchStarted;
       hideEndOverlay();
       localStorage.setItem("lobbyCode", newCode);
@@ -547,13 +527,11 @@ function widenContainer() {
     const winner = detectWinner(data);
     if (winner && phase !== "ended") {
       phase = "ended";
-      // show animated overlay
       showEndOverlay(winner === username ? "Jij" : winner, !!(data.rematchRequests && data.rematchRequests[opponent]));
 
       // record stats once (plays +1 for both, wins +1 for winner) — only if not already recorded
       try {
         if (!data.resultRecorded) {
-          // increment plays for both players
           const players = [username, opponent].filter(Boolean);
           for (const p of players) {
             const statRef = ref(db, `stats/${p}`);
@@ -563,21 +541,17 @@ function widenContainer() {
             const winsNow = (p === winner) ? ((val.wins || 0) + 1) : (val.wins || 0);
             await update(statRef, { plays: playsNow, wins: winsNow });
           }
-          // mark result recorded so we don't double-count
           await update(gameRef, { resultRecorded: true, resultWinner: winner });
         }
       } catch (e) {
-        // ignore errors but do not throw — stats are best-effort
         console.error("Stats update failed:", e);
       }
-      // show rematch indicator as well
     }
 
     // clear awaiting-turn flag when the DB turn changes away from me
     if (data.turn && data.turn !== username) {
       awaitingTurnChange = false;
     }
-    // also if turn becomes me again (after server change) clear awaiting
     if (data.turn && data.turn === username) {
       awaitingTurnChange = false;
     }
@@ -608,12 +582,11 @@ function widenContainer() {
     setReadyIndicator(myBoardTitle, true);
   });
 
-  // use power btn - note: we immediately consume one power on click so you cannot spam
+  // use power btn - consume immediately so no spam
   if (usePowerBtn) {
-    // ensure we don't add duplicate listeners
     usePowerBtn.addEventListener("click", async (ev) => {
+      // if no power, ignore
       if (myPowerShots <= 0) return;
-      // Immediately consume one power on click so DB/UI reflect usage and re-enabling can't happen prematurely
       myPowerShots = Math.max(0, myPowerShots - 1);
       try {
         await update(ref(db, `games/${lobbyCode}/${username}`), { powerShots: myPowerShots });
@@ -621,13 +594,10 @@ function widenContainer() {
         console.error("Failed to update powerShots on DB:", e);
       }
       usingPowerMode = true;
-      // disable the button until a new power is awarded
       usePowerBtn.disabled = true;
-      // update visible counter
       if (powerCountSpan) powerCountSpan.textContent = myPowerShots;
-      // if the button uses plain text without span, update text too
       if (!usePowerBtn.querySelector("span")) usePowerBtn.textContent = `Use PowerShot (${myPowerShots})`;
-      // instruct user to pick target: the next click on the enemy board will perform the 3x3
+      // next enemy-board click will perform 3x3 and call resolveTurnAfterShots with prevShots/newShots
     });
   }
 
@@ -705,11 +675,13 @@ function onMyCellEvent(x, y, type, cellEl) {
 }
 
 // ---------- enemy clicks (shoot/powershot) ----------
+// IMPORTANT: we now capture prevShots BEFORE writing to DB, then write newShots, then call resolveTurnAfterShots(newShots, ..., prevShots)
+// This ensures newly sunk ships are detected reliably and award +1 power per newly sunk ship.
 async function onEnemyCellClick(x, y, type, cellEl) {
   if (type !== "click") return;
   if (phase !== "playing") return;
   if (!opponent) return;
-  if (awaitingTurnChange) return; // block extra clicks while waiting
+  if (awaitingTurnChange) return;
 
   // check turn from DB
   const gsnap = await get(gameRef);
@@ -717,7 +689,10 @@ async function onEnemyCellClick(x, y, type, cellEl) {
   if (!g.turn) return;
   if (g.turn !== username) return;
 
-  // powershot active?
+  const shotsRef = ref(db, `games/${lobbyCode}/${username}/shots`);
+  const snapShots = await get(shotsRef);
+  const prevShots = snapShots.exists() ? snapShots.val() : {};
+
   if (usingPowerMode) {
     // build 3x3
     const toShot = [];
@@ -725,43 +700,43 @@ async function onEnemyCellClick(x, y, type, cellEl) {
       const sx = x + dx, sy = y + dy;
       if (sx >= 0 && sx < size && sy >= 0 && sy < size) toShot.push(`${sx},${sy}`);
     }
-    // write shots
-    const shotsRef = ref(db, `games/${lobbyCode}/${username}/shots`);
-    const snapShots = await get(shotsRef);
-    const current = snapShots.exists() ? snapShots.val() : {};
-    toShot.forEach(k => current[k] = true);
-    // set awaiting to block further clicks until DB turn changes
+    // add to prevShots -> newShots
+    const newShots = Object.assign({}, prevShots);
+    toShot.forEach(k => newShots[k] = true);
+
+    // write newShots to DB
     awaitingTurnChange = true;
-    await update(shotsRef, current);
-    // usingPowerMode was already consumed on button click, so don't decrement here
+    await update(shotsRef, newShots);
+
+    // usingPowerMode was consumed on the button click earlier
     usingPowerMode = false;
-    // ensure button reflects remaining powers (onValue listener will also sync)
     if (usePowerBtn) {
       usePowerBtn.disabled = true;
       if (powerCountSpan) powerCountSpan.textContent = myPowerShots;
       if (myPowerShots <= 0) usePowerBtn.style.display = "none";
     }
-    // resolve turn logic (power mode still switches after power shot or follows streak)
-    await resolveTurnAfterShots(current, true, toShot);
+
+    // resolve with both newShots and prevShots to detect newly sunk ships reliably
+    await resolveTurnAfterShots(newShots, true, toShot, prevShots);
     return;
   }
 
   // normal single shot
   const key = `${x},${y}`;
-  const shotsRef = ref(db, `games/${lobbyCode}/${username}/shots`);
-  const snapShots = await get(shotsRef);
-  const current = snapShots.exists() ? snapShots.val() : {};
-  if (current[key]) return;
-  current[key] = true;
+  if (prevShots[key]) return; // already shot
+
+  const newShots = Object.assign({}, prevShots);
+  newShots[key] = true;
+
   // block multi-clicks until DB updates
   awaitingTurnChange = true;
-  await update(shotsRef, current);
-  await resolveTurnAfterShots(current, false, [key]);
+  await update(shotsRef, newShots);
+
+  await resolveTurnAfterShots(newShots, false, [key], prevShots);
 }
 
 // ---------- hit detection & turn logic ----------
 function didShotHitSpecific(newKeys, opponentShipsGrouped) {
-  // return true if any of the newly fired keys hit any ship part
   for (let k of newKeys) {
     for (let si = 0; si < opponentShipsGrouped.length; si++) {
       if (opponentShipsGrouped[si].includes(k)) return true;
@@ -770,22 +745,18 @@ function didShotHitSpecific(newKeys, opponentShipsGrouped) {
   return false;
 }
 
-async function resolveTurnAfterShots(myShotsObj, wasPowerShot, newKeys = []) {
+// prevMyShots is the shots object BEFORE the update (so we can detect newly sunk ships)
+async function resolveTurnAfterShots(myShotsObj, wasPowerShot, newKeys = [], prevMyShots = {}) {
   // read latest game & opponent ships
   const gsnap = await get(gameRef);
   const g = gsnap.val() || {};
   const oppData = g[opponent] || {};
   const oppShips = oppData.ships || [];
 
-  // previous snapshot (to detect newly sunk ships)
-  const prev = lastGameState || {};
-  const prevOpponentShips = (prev[opponent] && prev[opponent].ships) ? prev[opponent].ships : [];
-  const prevMyShots = (prev[username] && prev[username].shots) ? prev[username].shots : {};
-
   // detect if any of the new keys hit
   const newHit = didShotHitSpecific(newKeys, oppShips);
 
-  // detect newly sunk ships (ships that are now fully hit but were not fully hit before)
+  // detect newly sunk ships: ships that are now fully hit in myShotsObj but were NOT fully hit in prevMyShots
   let newlySunkCount = 0;
   for (let si = 0; si < oppShips.length; si++) {
     const ship = oppShips[si];
@@ -795,7 +766,7 @@ async function resolveTurnAfterShots(myShotsObj, wasPowerShot, newKeys = []) {
   }
 
   if (mode === "streak") {
-    // in streak: keep turn only if the new shot(s) produced at least one hit, else switch
+    // keep turn only if the new shot(s) produced at least one hit, else switch
     if (newHit) {
       await update(gameRef, { turn: username });
     } else {
@@ -804,14 +775,14 @@ async function resolveTurnAfterShots(myShotsObj, wasPowerShot, newKeys = []) {
   } else {
     // classic & power: always switch (BUT for power grant if newly sunk)
     if (newlySunkCount > 0 && mode === "power") {
-      // grant one powerShot per newly sunk ship
+      // grant one powerShot per newly sunk ship (safe-read/write)
       const selfRef = ref(db, `games/${lobbyCode}/${username}`);
       const selfSnap = await get(selfRef);
       const selfData = selfSnap.exists() ? selfSnap.val() : {};
       const nowPower = (selfData.powerShots || 0) + newlySunkCount;
       await update(selfRef, { powerShots: nowPower });
       myPowerShots = nowPower;
-      // update UI (onValue listener will also set)
+      // UI will sync via onValue listener; still update visible counter if present
       if (powerCountSpan) powerCountSpan.textContent = myPowerShots;
       if (usePowerBtn) {
         usePowerBtn.style.display = mode === "power" ? "inline-block" : "none";
@@ -849,8 +820,7 @@ function renderBoards(data) {
     // if hiding own ships, ensure non-hit ship cells don't show ship markers
     placedShips.flat().forEach(k => {
       const c = findCell(myBoardDiv, k);
-      if (c) { 
-        // leave them with default background unless they were hit (those handled below)
+      if (c) {
         if (! (oppNode && oppNode.shots && oppNode.shots[k]) ) {
           c.style.background = "rgba(255,255,255,0.03)";
           c.textContent = "";
