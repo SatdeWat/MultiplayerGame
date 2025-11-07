@@ -149,7 +149,7 @@ function setRematchIndicator(titleEl, requested) {
 // Turn popup helpers
 // -------------------------
 // De popup toont wie er aan de beurt is.
-// We tonen eerst tijdelijk "Game starts!" en daarna persistent "Aan de beurt: X".
+// We tonen eerst tijdelijk "Game starts!" en daarna "Aan de beurt: X".
 function persistTurnPopup(name) {
   // Slaat de laatst getoonde naam op en toont de popup
   lastTurnShown = name;
@@ -159,7 +159,7 @@ function persistTurnPopup(name) {
   turnPopup.style.display = "block";
 }
 function showTempPopup(msg, ms = 1000) {
-  // Toont korte boodschap, daarna herstelt hij de persistente status
+  // Toont korte boodschap, daarna beurten weergeven
   if (!turnPopup) return;
   const prev = lastTurnShown;
   turnPopup.innerHTML = `<strong>${msg}</strong>`;
@@ -357,7 +357,7 @@ function widenContainer() {
   try {
     const pageTitle = document.querySelector("h1");
     if (pageTitle && turnPopup) {
-      // Plaats de popup na de titel (dus onder de titel)
+      // Plaats de popup na de titel
       pageTitle.after(turnPopup);
       // Basale styling voor nette weergave
       turnPopup.style.display = "none";
@@ -392,7 +392,7 @@ function widenContainer() {
     // ignore
   }
 
-  // Voeg knop toe om eigen schepen te verbergen (kleine helper)
+  // Voeg knop toe om eigen schepen te verbergen
   try {
     if (myBoardTitle) {
       const hideBtn = document.createElement("button");
@@ -432,7 +432,7 @@ function widenContainer() {
   enemySizeLabel.textContent = `${size}x${size}`;
   placeHint.textContent = `Plaats schip van lengte ${shipLengths[0]}`;
 
-  // Maak de twee borden aan en plaats event handlers
+  // Maak de twee borden aan
   createBoard(myBoardDiv, size, true, onMyCellEvent);
   createBoard(enemyBoardDiv, size, false, onEnemyCellClick);
   rotateBtn.textContent = `Rotate (${orientation})`;
@@ -560,7 +560,7 @@ function widenContainer() {
       }
     }
 
-    // Als rematchStarted gezet is door iemand anders en jij hebt nog niet gerematch -> redirect gelijk
+    // Als rematchStarted gezet is door iemand anders en jij hebt nog niet gerematch -> wacht
     if (data.rematchStarted && !(remReqObj[username] && remReqObj[opponent])) {
       const newCode = data.rematchStarted;
       hideEndOverlay();
@@ -575,7 +575,6 @@ function widenContainer() {
       showEndOverlay(winner === username ? "Jij" : winner, !!(data.rematchRequests && data.rematchRequests[opponent]));
 
       // STATISTIEKEN: schrijf plays +1 voor beide en wins +1 voor winnaar.
-      // FIX: alleen de lobby-host doet deze DB schrijf, zodat er niet dubbel geschreven wordt.
       try {
         if (!data.resultRecorded) {
           if (lobbyData && lobbyData.host === username) {
@@ -814,7 +813,7 @@ async function resolveTurnAfterShots(myShotsObj, wasPowerShot, newKeys = [], pre
   // nieuw/oud detecties
   const newHit = didShotHitSpecific(newKeys, oppShips);
 
-  // Tel hoeveel schepen *nieuw* gezonken zijn (nu volledig geraakt, vroeger niet)
+  // Tel hoeveel schepen *nieuw* gezonken zijn
   let newlySunkCount = 0;
   for (let si = 0; si < oppShips.length; si++) {
     const ship = oppShips[si];
