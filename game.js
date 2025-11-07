@@ -111,18 +111,19 @@ function setRematchIndicator(titleEl, requested) {
   s.textContent = requested ? " (rematch aangevraagd)" : "";
 }
 
-// persistent turn popup
+// persistent turn popup (nu met kleine titel "Zeeslag - Spel")
 function persistTurnPopup(name) {
   lastTurnShown = name;
   if (!turnPopup) return;
   const text = name === username ? "Jij" : name;
-  turnPopup.innerHTML = `Aan de beurt: <strong id="turnPlayer">${text}</strong>`;
+  turnPopup.innerHTML = `<div style="font-weight:800;margin-bottom:6px;text-align:center;">Zeeslag - Spel</div>
+                         <div style="text-align:center">Aan de beurt: <strong id="turnPlayer">${text}</strong></div>`;
   turnPopup.style.display = "block";
 }
 function showTempPopup(msg, ms = 1000) {
   if (!turnPopup) return;
   const prev = lastTurnShown;
-  turnPopup.innerHTML = `<strong>${msg}</strong>`;
+  turnPopup.innerHTML = `<div style="font-weight:800;margin-bottom:6px;text-align:center;">Zeeslag - Spel</div><div style="text-align:center"><strong>${msg}</strong></div>`;
   turnPopup.style.display = "block";
   setTimeout(() => {
     if (prev) persistTurnPopup(prev);
@@ -312,26 +313,29 @@ function widenContainer() {
   // Add PowerShot button and power counter if missing (we only do this so the button is guaranteed present)
   try {
     if (!usePowerBtn) {
-      // create wrapper area near myBoardTitle (or append to myBoardCard)
+      // create wrapper area near myBoardTitle (or append to myBoardCard or body)
       const wrap = myBoardTitle || myBoardCard || document.body;
+      const wrapperDiv = document.createElement("div");
+      wrapperDiv.style.display = "inline-flex";
+      wrapperDiv.style.alignItems = "center";
+      wrapperDiv.style.marginLeft = "10px";
       const btn = document.createElement("button");
       btn.id = "usePowerBtn";
       btn.textContent = "Use PowerShot (0)";
       Object.assign(btn.style, {
-        marginLeft: "10px",
+        marginLeft: "6px",
         padding: "6px 10px",
         fontSize: "13px",
         cursor: "pointer",
         borderRadius: "6px"
       });
-      // create counter span
       const span = document.createElement("span");
       span.id = "powerCount";
       span.style.marginLeft = "8px";
       span.textContent = "0";
-      // attach
-      wrap.appendChild(btn);
-      wrap.appendChild(span);
+      wrapperDiv.appendChild(btn);
+      wrapperDiv.appendChild(span);
+      wrap.appendChild(wrapperDiv);
       // reassign globals
       usePowerBtn = document.getElementById("usePowerBtn");
       powerCountSpan = document.getElementById("powerCount");
@@ -410,7 +414,7 @@ function widenContainer() {
     lastGameState = data;
 
     // player keys present
-    const playerKeys = Object.keys(data).filter(k => k !== "turn" && k !== "rematchRequests" && k !== "rematchStarted");
+    const playerKeys = Object.keys(data).filter(k => k !== "turn" && k !== "rematchRequests" && k !== "rematchStarted" && k!=="resultRecorded" && k!=="resultWinner");
     if (!opponent && playerKeys.length >= 2) opponent = playerKeys.find(k => k !== username);
 
     const meNode = data[username] || {};
@@ -454,10 +458,21 @@ function widenContainer() {
     // both ready -> start
     if (meNode && oppNode && meNode.ready && oppNode.ready && phase !== "playing") {
       if (!data.turn) {
-        const first = Math.random() < 0.5 ? username : opponent;
-        await update(gameRef, { turn: first });
-        lastTurnShown = first;
-        showStartThenPersist(first);
+        // avoid race: re-check DB just before writing the initial turn
+        const firstPick = Math.random() < 0.5 ? username : opponent;
+        const fresh = await get(gameRef);
+        const freshVal = fresh.exists() ? fresh.val() : {};
+        if (!freshVal.turn) {
+          // only this client will succeed in writing if other client hasn't yet
+          await update(gameRef, { turn: firstPick });
+          const after = await get(gameRef);
+          const finalTurn = (after.exists() && after.val().turn) ? after.val().turn : firstPick;
+          lastTurnShown = finalTurn;
+          showStartThenPersist(finalTurn);
+        } else {
+          lastTurnShown = freshVal.turn;
+          showStartThenPersist(lastTurnShown);
+        }
       } else {
         lastTurnShown = data.turn;
         showStartThenPersist(data.turn);
@@ -526,6 +541,27 @@ function widenContainer() {
       phase = "ended";
       // show animated overlay
       showEndOverlay(winner === username ? "Jij" : winner, !!(data.rematchRequests && data.rematchRequests[opponent]));
+
+      // record stats once (plays +1 for both, wins +1 for winner) — only if not already recorded
+      try {
+        if (!data.resultRecorded) {
+          // increment plays for both players
+          const players = [username, opponent].filter(Boolean);
+          for (const p of players) {
+            const statRef = ref(db, `stats/${p}`);
+            const snap = await get(statRef);
+            const val = snap.exists() ? snap.val() : {};
+            const playsNow = (val.plays || 0) + 1;
+            const winsNow = (p === winner) ? ((val.wins || 0) + 1) : (val.wins || 0);
+            await update(statRef, { plays: playsNow, wins: winsNow });
+          }
+          // mark result recorded so we don't double-count
+          await update(gameRef, { resultRecorded: true, resultWinner: winner });
+        }
+      } catch (e) {
+        // ignore errors but do not throw — stats are best-effort
+        console.error("Stats update failed:", e);
+      }
       // show rematch indicator as well
     }
 
@@ -564,7 +600,7 @@ function widenContainer() {
     setReadyIndicator(myBoardTitle, true);
   });
 
-  // use power btn - note: we immediately consume one power on click so you cannot spam
+  // use power btn - note: we immediately consume one power on click so you cannot spam (and button guaranteed present)
   if (usePowerBtn) {
     usePowerBtn.addEventListener("click", async () => {
       if (myPowerShots <= 0) return;
@@ -873,7 +909,7 @@ function renderBoards(data) {
 // ---------- winner detection ----------
 function detectWinner(gdata) {
   if (!gdata) return null;
-  const playerKeys = Object.keys(gdata).filter(k => k !== "turn" && k !== "rematchRequests" && k !== "rematchStarted");
+  const playerKeys = Object.keys(gdata).filter(k => k !== "turn" && k !== "rematchRequests" && k !== "rematchStarted" && k!=="resultRecorded" && k!=="resultWinner");
   if (playerKeys.length < 2) return null;
   const [pA, pB] = playerKeys;
   const aShips = (gdata[pA] && Array.isArray(gdata[pA].ships)) ? gdata[pA].ships.flat() : [];
