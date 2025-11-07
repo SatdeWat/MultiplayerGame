@@ -1,16 +1,5 @@
 // game.js
-// Verwacht: firebase.js exporteert: db, dbRef as ref, dbSet as set, dbGet as get, dbUpdate as update, dbOnValue as onValue
-// --------------------------------------------
-// Dit bestand bestuurt het spel "Zeeslag" in de browser.
-// Ondersteunde features:
-// - Borden maken (mijn bord + vijand bord)
-// - Schepen plaatsen en klaarzetten
-// - Schieten (normaal + PowerShot 3x3)
-// - Gamemodes: classic, streak, power
-// - Rematch flow en win-detectie
-// - Statistiek registratie (plays/wins) uitgevoerd door de lobby-host
-// --------------------------------------------
-
+// DataBase importeren
 import {
   db,
   dbRef as ref,
@@ -175,10 +164,7 @@ function showStartThenPersist(first) {
   setTimeout(() => persistTurnPopup(first), 1100);
 }
 
-// -------------------------
-// Einde-overlay (gewonnen/ verloren + rematch)
-// -------------------------
-// Maakt en toont een groot overlay met confetti en rematch knop.
+// Eindscherm
 let endOverlay = null;
 function createEndOverlay() {
   if (endOverlay) return endOverlay;
@@ -254,7 +240,7 @@ function createEndOverlay() {
     fontWeight: "700"
   });
   remBtn.addEventListener("click", async () => {
-    // Stuur rematch-aanvraag naar DB (dit markeert dat deze speler rematch wil)
+    // Stuur rematch-aanvraag naar DataBase
     await update(ref(db, `games/${lobbyCode}/rematchRequests`), { [username]: true });
     setRematchIndicator(myBoardTitle, true);
     remBtn.disabled = true;
@@ -414,7 +400,7 @@ function widenContainer() {
     }
   } catch (e) { /* ignore */ }
 
-  // Lees lobby-informatie uit DB (grootte, mode, spelers)
+  // Lees lobby-informatie uit DataBase
   lobbyRef = ref(db, `lobbies/${lobbyCode}`);
   gameRef = ref(db, `games/${lobbyCode}`);
 
@@ -437,7 +423,7 @@ function widenContainer() {
   createBoard(enemyBoardDiv, size, false, onEnemyCellClick);
   rotateBtn.textContent = `Rotate (${orientation})`;
 
-  // Zorg dat games node bestaat als beide spelers in de lobby zijn
+  // Zetten in DataBase
   onValue(lobbyRef, async (lsnap) => {
     const data = lsnap.val() || {};
     lobbyData = data;
