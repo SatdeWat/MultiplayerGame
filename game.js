@@ -21,7 +21,7 @@ const enemyBoardDiv = document.getElementById("enemyBoard");
 const rotateBtn = document.getElementById("rotateBtn");
 const doneBtn = document.getElementById("doneBtn");
 const backHome = document.getElementById("backHome");
-const turnPopup = document.getElementById("turnPopup");
+let turnPopup = document.getElementById("turnPopup");
 const turnPlayer = document.getElementById("turnPlayer");
 const gameNote = document.getElementById("gameNote");
 const mySizeLabel = document.getElementById("mySizeLabel");
@@ -112,7 +112,8 @@ function setRematchIndicator(titleEl, requested) {
 }
 
 // persistent turn popup
-// NOTE: per request: popup moet alleen "Game starts" (temp) en wie aan de beurt is (persist), geen titel daarboven.
+// Popup moet alleen "Game starts!" (tijdelijk) en vervolgens "Aan de beurt: ..." tonen.
+// User vroeg later: popup net onder de titel van de pagina — we verplaatsen DOM node tijdens init.
 function persistTurnPopup(name) {
   lastTurnShown = name;
   if (!turnPopup) return;
@@ -310,18 +311,39 @@ function widenContainer() {
   ensureRematchIndicator(myBoardTitle);
   ensureRematchIndicator(enemyBoardTitle);
 
-  // Add fallback PowerShot button and power counter only if missing
+  // Move the existing turnPopup element (if present) to be *directly under the page title (H1)*,
+  // so it appears just above the boards as requested.
+  try {
+    const pageTitle = document.querySelector("h1");
+    if (pageTitle && turnPopup) {
+      // remove from current parent and insert after h1
+      pageTitle.after(turnPopup);
+      // small style to center it and add spacing
+      turnPopup.style.display = "none";
+      turnPopup.style.margin = "8px auto";
+      turnPopup.style.width = "fit-content";
+      turnPopup.style.padding = "6px 10px";
+      turnPopup.style.borderRadius = "8px";
+      turnPopup.style.background = "rgba(0,0,0,0.04)";
+      turnPopup.style.fontWeight = "700";
+      turnPopup.style.textAlign = "center";
+    }
+  } catch (e) {
+    // ignore if DOM unexpected
+  }
+
+  // Add fallback PowerShot button and power counter only if missing.
+  // Prefer to use your existing button in the enemy board center-controls (per provided game.html).
   try {
     if (!usePowerBtn) {
-      // prefer the existing center-controls in enemyBoardCard
       const center = enemyBoardCard ? enemyBoardCard.querySelector(".center-controls") : null;
       const wrapTarget = center || enemyBoardCard || document.body;
       const btn = document.createElement("button");
       btn.id = "usePowerBtn";
       btn.className = "power-btn";
-      btn.style.display = "none";
-      // include span inside so HTML and JS sync with your provided template
+      // Use same inner structure as your template: span inside parentheses
       btn.innerHTML = `Use PowerShot (<span id="powerCount">0</span>)`;
+      btn.style.display = "none"; // we'll show it only in power mode (even if 0, show disabled)
       wrapTarget.appendChild(btn);
       // reassign globals
       usePowerBtn = document.getElementById("usePowerBtn");
@@ -407,20 +429,14 @@ function widenContainer() {
     const meNode = data[username] || {};
     const oppNode = data[opponent] || {};
 
-    // powerShots UI: only show/use in power mode
-    if (meNode.powerShots !== undefined) {
-      myPowerShots = meNode.powerShots || 0;
-      if (powerCountSpan) powerCountSpan.textContent = myPowerShots;
-      if (usePowerBtn) {
-        // show only if game mode is power and player has >0 powers
-        usePowerBtn.style.display = (mode === "power" && myPowerShots > 0) ? "inline-block" : "none";
-        // keep button disabled if no powers or if we are already in usingPowerMode
-        usePowerBtn.disabled = myPowerShots <= 0 || usingPowerMode;
-        // update visible text if button uses plain text (we keep span for count in your template)
-        if (!usePowerBtn.querySelector("span") && typeof usePowerBtn.textContent === "string") {
-          usePowerBtn.textContent = `Use PowerShot (${myPowerShots})`;
-        }
-      }
+    // powerShots UI: show the button whenever gamemode == power (visible), but disable if player has 0
+    if (usePowerBtn) {
+      // ensure span text is present
+      if (powerCountSpan && meNode.powerShots !== undefined) powerCountSpan.textContent = meNode.powerShots || 0;
+      // display logic: visible if mode is "power", hidden otherwise
+      usePowerBtn.style.display = (mode === "power") ? "inline-block" : "none";
+      // disabled when no power shots or when already in usingPowerMode
+      usePowerBtn.disabled = !(meNode.powerShots > 0) || usingPowerMode;
     }
 
     // adopt ships from DB if page reloaded
@@ -594,6 +610,7 @@ function widenContainer() {
 
   // use power btn - note: we immediately consume one power on click so you cannot spam
   if (usePowerBtn) {
+    // ensure we don't add duplicate listeners
     usePowerBtn.addEventListener("click", async (ev) => {
       if (myPowerShots <= 0) return;
       // Immediately consume one power on click so DB/UI reflect usage and re-enabling can't happen prematurely
@@ -610,7 +627,7 @@ function widenContainer() {
       if (powerCountSpan) powerCountSpan.textContent = myPowerShots;
       // if the button uses plain text without span, update text too
       if (!usePowerBtn.querySelector("span")) usePowerBtn.textContent = `Use PowerShot (${myPowerShots})`;
-      // instruct user to pick target: the next click on enemy board will perform the 3x3
+      // instruct user to pick target: the next click on the enemy board will perform the 3x3
     });
   }
 
@@ -797,7 +814,7 @@ async function resolveTurnAfterShots(myShotsObj, wasPowerShot, newKeys = []) {
       // update UI (onValue listener will also set)
       if (powerCountSpan) powerCountSpan.textContent = myPowerShots;
       if (usePowerBtn) {
-        usePowerBtn.style.display = mode === "power" && myPowerShots > 0 ? "inline-block" : "none";
+        usePowerBtn.style.display = mode === "power" ? "inline-block" : "none";
         usePowerBtn.disabled = myPowerShots <= 0;
         if (!usePowerBtn.querySelector("span")) usePowerBtn.textContent = `Use PowerShot (${myPowerShots})`;
       }
